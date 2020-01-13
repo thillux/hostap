@@ -4874,6 +4874,11 @@ void wpa_supplicant_event(void *ctx, enum wpa_event_type event,
 					data->eapol_rx.data,
 					data->eapol_rx.data_len);
 		break;
+	case EVENT_RSN_PREAUTH_RX:
+		wpa_supplicant_rx_rsn_preauth(wpa_s, data->rsn_preauth_rx.src,
+					data->rsn_preauth_rx.data,
+					data->rsn_preauth_rx.data_len);
+		break;
 	case EVENT_SIGNAL_CHANGE:
 		wpa_msg(wpa_s, MSG_INFO, WPA_EVENT_SIGNAL_CHANGE
 			"above=%d signal=%d noise=%d txrate=%d",

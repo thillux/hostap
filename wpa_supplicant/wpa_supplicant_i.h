@@ -1372,6 +1372,8 @@ int wpa_supplicant_scard_init(struct wpa_supplicant *wpa_s,
 void wpa_supplicant_terminate_proc(struct wpa_global *global);
 void wpa_supplicant_rx_eapol(void *ctx, const u8 *src_addr,
 			     const u8 *buf, size_t len);
+void wpa_supplicant_rx_rsn_preauth(void *ctx, const u8 *src_addr,
+				   const u8 *buf, size_t len);
 void wpa_supplicant_update_config(struct wpa_supplicant *wpa_s);
 void wpa_supplicant_clear_status(struct wpa_supplicant *wpa_s);
 void wpas_connection_failed(struct wpa_supplicant *wpa_s, const u8 *bssid);

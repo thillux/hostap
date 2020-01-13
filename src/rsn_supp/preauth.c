@@ -58,8 +58,8 @@ static int rsn_preauth_key_mgmt(int akmp)
 }
 
 
-static void rsn_preauth_receive(void *ctx, const u8 *src_addr,
-				const u8 *buf, size_t len)
+void rsn_preauth_receive(void *ctx, const u8 *src_addr,
+			 const u8 *buf, size_t len)
 {
 	struct wpa_sm *sm = ctx;
 

@@ -14,6 +14,8 @@ struct wpa_scan_results;
 #if defined(IEEE8021X_EAPOL) && !defined(CONFIG_NO_WPA)
 
 void pmksa_candidate_free(struct wpa_sm *sm);
+void rsn_preauth_receive(void *ctx, const u8 *src_addr,
+			 const u8 *buf, size_t len);
 int rsn_preauth_init(struct wpa_sm *sm, const u8 *dst,
 		     struct eap_peer_config *eap_conf);
 void rsn_preauth_deinit(struct wpa_sm *sm);
@@ -30,6 +32,11 @@ int rsn_preauth_in_progress(struct wpa_sm *sm);
 #else /* IEEE8021X_EAPOL && !CONFIG_NO_WPA */
 
 static inline void pmksa_candidate_free(struct wpa_sm *sm)
+{
+}
+
+static inline void rsn_preauth_receive(void *ctx, const u8 *src_addr,
+				       const u8 *buf, size_t len)
 {
 }
 

@@ -4660,6 +4660,34 @@ void wpa_supplicant_rx_eapol(void *ctx, const u8 *src_addr,
 	}
 }
 
+/**
+ * wpa_supplicant_rx_rsn_preauth - Deliver a received PREAUTH frame to
+ * wpa_supplicant
+ * @ctx: Context pointer (wpa_s); this is the ctx variable registered
+ *	with struct wpa_driver_ops::init()
+ * @src_addr: Source address of the PREAUTH frame
+ * @buf: EAPOL data starting from the PREAUTH header (i.e., no Ethernet header)
+ * @len: Length of the PREAUTH data
+ *
+ * This function is called for each received PREAUTH frame. Most driver
+ * interfaces rely on more generic OS mechanism for receiving frames through
+ * l2_packet, but if such a mechanism is not available, the driver wrapper may
+ * take care of received PREAUTH frames and deliver them to the core supplicant
+ * code by calling this function.
+ */
+void wpa_supplicant_rx_rsn_preauth(void *ctx, const u8 *src_addr,
+				   const u8 *buf, size_t len)
+{
+	struct wpa_supplicant *wpa_s = ctx;
+
+	wpa_dbg(wpa_s, MSG_DEBUG, "RX RSN PREAUTH from " MACSTR, MAC2STR(src_addr));
+	wpa_hexdump(MSG_MSGDUMP, "RX RSN PREAUTH", buf, len);
+
+	if (wpa_s->wpa) {
+		rsn_preauth_receive(wpa_s->wpa, src_addr, buf, len);
+	}
+}
+
 
 int wpa_supplicant_update_mac_addr(struct wpa_supplicant *wpa_s)
 {

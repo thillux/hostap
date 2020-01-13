@@ -4639,6 +4639,14 @@ enum wpa_event_type {
 	EVENT_EAPOL_RX,
 
 	/**
+	 * EVENT_RSN_PREAUTH_RX - Report received RSN Pre-auth frame
+	 *
+	 * When in AP mode with hostapd, this event is required to be used to
+	 * deliver the receive RSN Pre-auth frames from the driver.
+	 */
+	EVENT_RSN_PREAUTH_RX,
+
+	/**
 	 * EVENT_SIGNAL_CHANGE - Indicate change in signal strength
 	 *
 	 * This event is used to indicate changes in the signal strength
@@ -5534,6 +5542,16 @@ union wpa_event_data {
 	} eapol_rx;
 
 	/**
+	 * struct rsn_preauth_rx - Data for EVENT_RSN_PREAUTH_RX events
+	 */
+	struct rsn_preauth_rx {
+		const u8 *src;
+		const u8 *dst;
+		const u8 *data;
+		size_t data_len;
+	} rsn_preauth_rx;
+
+	/**
 	 * signal_change - Data for EVENT_SIGNAL_CHANGE events
 	 */
 	struct wpa_signal_info signal_change;
@@ -5854,6 +5872,19 @@ static inline void drv_event_eapol_rx(void *ctx, const u8 *src, const u8 *data,
 	event.eapol_rx.data = data;
 	event.eapol_rx.data_len = data_len;
 	wpa_supplicant_event(ctx, EVENT_EAPOL_RX, &event);
+}
+
+static inline void drv_event_rsn_preauth_rx(void *ctx, const u8 *src,
+					    const u8 *dst, const u8 *data,
+					    size_t data_len)
+{
+	union wpa_event_data event;
+	os_memset(&event, 0, sizeof(event));
+	event.rsn_preauth_rx.src = src;
+	event.rsn_preauth_rx.dst = dst;
+	event.rsn_preauth_rx.data = data;
+	event.rsn_preauth_rx.data_len = data_len;
+	wpa_supplicant_event(ctx, EVENT_RSN_PREAUTH_RX, &event);
 }
 
 /* driver_common.c */

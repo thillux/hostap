@@ -52,6 +52,7 @@ const char * event_to_string(enum wpa_event_type event)
 	E2S(RX_PROBE_REQ);
 	E2S(NEW_STA);
 	E2S(EAPOL_RX);
+	E2S(RSN_PREAUTH_RX);
 	E2S(SIGNAL_CHANGE);
 	E2S(INTERFACE_ENABLED);
 	E2S(INTERFACE_DISABLED);

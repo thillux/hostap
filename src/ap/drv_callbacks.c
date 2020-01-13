@@ -42,6 +42,7 @@
 #include "dpp_hostapd.h"
 #include "fils_hlp.h"
 #include "neighbor_db.h"
+#include "preauth_auth.h"
 
 
 #ifdef CONFIG_FILS
@@ -1424,6 +1425,30 @@ static void hostapd_event_eapol_rx(struct hostapd_data *hapd, const u8 *src,
 	ieee802_1x_receive(hapd, src, data, data_len);
 }
 
+
+static void hostapd_event_rsn_preauth_rx(struct hostapd_data *hapd,
+					 const u8 *src, const u8 *dst,
+					 const u8 *data, size_t data_len)
+{
+	if (!hapd->preauth_iface) {
+		wpa_printf(MSG_DEBUG, "Received pre-auth frame from " MACSTR
+			   " without preauth_iface created",
+			   MAC2STR(src));
+		return;
+	}
+
+	if (!dst) {
+		wpa_printf(MSG_DEBUG, "Received pre-auth frame from " MACSTR
+			   " without destination MAC set, maybe your kernel "
+			   "is too old for nl80211 control port rx",
+			   MAC2STR(src));
+		return;
+	}
+
+	rsn_preauth_receive_or_forward(hapd, src, dst, data, data_len);
+}
+
+
 #endif /* HOSTAPD */
 
 
@@ -1796,6 +1821,13 @@ void wpa_supplicant_event(void *ctx, enum wpa_event_type event,
 		hostapd_event_eapol_rx(hapd, data->eapol_rx.src,
 				       data->eapol_rx.data,
 				       data->eapol_rx.data_len);
+		break;
+	case EVENT_RSN_PREAUTH_RX:
+		hostapd_event_rsn_preauth_rx(hapd,
+					     data->rsn_preauth_rx.src,
+					     data->rsn_preauth_rx.dst,
+					     data->rsn_preauth_rx.data,
+					     data->rsn_preauth_rx.data_len);
 		break;
 	case EVENT_ASSOC:
 		if (!data)

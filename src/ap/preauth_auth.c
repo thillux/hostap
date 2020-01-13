@@ -270,4 +270,33 @@ void rsn_preauth_free_station(struct hostapd_data *hapd, struct sta_info *sta)
 	eloop_cancel_timeout(rsn_preauth_finished_cb, hapd, sta);
 }
 
+void rsn_preauth_receive_or_forward(struct hostapd_data *hapd,
+				    const u8 *src_addr,
+				    const u8 *dst_addr,
+				    const u8 *buf, size_t len)
+{
+	struct l2_ethhdr *ethhdr;
+
+	ethhdr = os_malloc(sizeof(*ethhdr) + len);
+	if (ethhdr == NULL)
+		return;
+
+	if (os_memcmp(dst_addr, hapd->own_addr, ETH_ALEN) != 0) {
+		os_memcpy(ethhdr->h_dest, dst_addr, ETH_ALEN);
+		os_memcpy(ethhdr->h_source, src_addr, ETH_ALEN);
+		ethhdr->h_proto = host_to_be16(ETH_P_PREAUTH);
+		os_memcpy(ethhdr + 1, buf, len);
+
+		if (l2_packet_send(hapd->preauth_iface->l2, dst_addr, ETH_P_PREAUTH, (u8 *) ethhdr,
+				   sizeof(*ethhdr) + len) < 0) {
+			wpa_printf(MSG_ERROR, "Failed to forward preauth packet using "
+				   "l2_packet_send\n");
+		}
+	} else {
+		rsn_preauth_receive(hapd->preauth_iface, src_addr, buf, len);
+	}
+
+	os_free(ethhdr);
+}
+
 #endif /* CONFIG_RSN_PREAUTH */

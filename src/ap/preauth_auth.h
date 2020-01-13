@@ -19,6 +19,11 @@ void rsn_preauth_send(struct hostapd_data *hapd, struct sta_info *sta,
 		      u8 *buf, size_t len);
 void rsn_preauth_free_station(struct hostapd_data *hapd, struct sta_info *sta);
 
+void rsn_preauth_receive_or_forward(struct hostapd_data *hapd,
+				    const u8 *src_addr,
+				    const u8 *dst_addr,
+				    const u8 *buf, size_t len);
+
 #else /* CONFIG_RSN_PREAUTH */
 
 static inline int rsn_preauth_iface_init(struct hostapd_data *hapd)
@@ -46,6 +51,14 @@ static inline void rsn_preauth_free_station(struct hostapd_data *hapd,
 					    struct sta_info *sta)
 {
 }
+
+static inline void rsn_preauth_receive_or_forward(struct hostapd_data *hapd,
+						  const u8 *src_addr,
+						  const u8 *dst_addr,
+						  const u8 *buf, size_t len)
+{
+}
+
 
 #endif /* CONFIG_RSN_PREAUTH */
 

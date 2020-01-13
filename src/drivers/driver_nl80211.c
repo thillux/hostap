@@ -482,6 +482,10 @@ struct nl_sock* get_connect_or_ctrl_handle(struct i802_bss *bss)
 {
 	struct nl_sock *nl_connect_or_ctrl = NULL;
 
+	/* TODO: remove, if AP support complete (depends on kernel) */
+	if (bss->drv->hostapd)
+		return NULL;
+
 	if (bss->drv->capa.flags & WPA_DRIVER_FLAGS_CONTROL_PORT ||
 	    bss->use_nl_connect)
 		nl_connect_or_ctrl = bss->nl_connect_or_ctrl;

@@ -68,7 +68,7 @@ struct i802_bss {
 	int if_dynamic;
 
 	void *ctx;
-	struct nl_sock *nl_preq, *nl_mgmt, *nl_connect;
+	struct nl_sock *nl_preq, *nl_mgmt, *nl_connect_or_ctrl;
 	struct nl_cb *nl_cb;
 
 	struct nl80211_wiphy_data *wiphy_data;

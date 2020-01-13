@@ -437,6 +437,46 @@ int send_and_recv_msgs(struct wpa_driver_nl80211_data *drv,
 			     valid_handler, valid_data);
 }
 
+/* use this method to mark, that it is necessary to own the connection/interface
+ * for this operation.
+ * handle may be set to NULL, to get the same behavior as send_and_recv_msgs
+ * set_owner can be used to mark this socket for receiving control port frames
+ */
+int send_and_recv_msgs_as_owner(struct wpa_driver_nl80211_data *drv,
+				struct nl_msg *msg,
+				struct nl_sock *handle, Boolean set_owner,
+				int (*valid_handler)(struct nl_msg *, void *),
+				void *valid_data)
+{
+	int ret = -1;
+
+	/* Control port over nl80211 needs the flags and attributes below.
+	 *
+	 * The Linux kernel has initial checks for them (in nl80211.c) like:
+	 *     validate_pae_over_nl80211(...)
+	 * or final checks like:
+	 *     dev->ieee80211_ptr->conn_owner_nlportid != info->snd_portid
+	 * 
+	 * Initial operations like ()
+	 * Final operations (e.g. disassociate) don't need to set these
+	 * attributes, but they have to be performed on the socket, which
+	 * has the connection owner property set in the kernel.
+	 */
+	if (drv->capa.flags & WPA_DRIVER_FLAGS_CONTROL_PORT &&
+	    handle && set_owner)
+		if (nla_put_flag(msg, NL80211_ATTR_CONTROL_PORT_OVER_NL80211) ||
+		    nla_put_flag(msg, NL80211_ATTR_SOCKET_OWNER) ||
+		    nla_put_u16(msg, NL80211_ATTR_CONTROL_PORT_ETHERTYPE,
+				ETH_P_PAE))
+			goto out;
+
+	return send_and_recv(drv->global, handle ? handle : drv->global->nl,
+			     msg, valid_handler, valid_data);
+
+out:
+	return ret;
+}
+
 
 struct family_data {
 	const char *group;

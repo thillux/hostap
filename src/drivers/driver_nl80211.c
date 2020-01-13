@@ -1918,6 +1918,25 @@ static void wpa_driver_nl80211_handle_eapol_tx_status(int sock,
 }
 
 
+static int nl80211_init_connect_or_ctrl_handle(struct i802_bss *bss)
+{
+	if (bss->nl_connect_or_ctrl) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Connect handle already created (nl_connect_or_ctrl=%p)",
+			   bss->nl_connect_or_ctrl);
+		return -1;
+	}
+
+	bss->nl_connect_or_ctrl = nl_create_handle(bss->nl_cb, "connect_or_ctrl");
+	if (!bss->nl_connect_or_ctrl)
+		return -1;
+	nl80211_register_eloop_read(&bss->nl_connect_or_ctrl,
+				    wpa_driver_nl80211_event_receive,
+				    bss->nl_cb, 1);
+	return 0;
+}
+
+
 static int nl80211_init_bss(struct i802_bss *bss)
 {
 	bss->nl_cb = nl_cb_alloc(NL_CB_DEFAULT);
@@ -1929,6 +1948,8 @@ static int nl80211_init_bss(struct i802_bss *bss)
 	nl_cb_set(bss->nl_cb, NL_CB_VALID, NL_CB_CUSTOM,
 		  process_bss_event, bss);
 
+	nl80211_init_connect_or_ctrl_handle(bss);
+
 	return 0;
 }
 
@@ -1937,6 +1958,10 @@ static void nl80211_destroy_bss(struct i802_bss *bss)
 {
 	nl_cb_put(bss->nl_cb);
 	bss->nl_cb = NULL;
+
+	if (bss->nl_connect_or_ctrl) {
+		nl80211_destroy_eloop_handle(&bss->nl_connect_or_ctrl, 1);
+	}
 }
 
 
@@ -2157,25 +2182,6 @@ static int nl80211_register_action_frame(struct i802_bss *bss,
 	u16 type = (WLAN_FC_TYPE_MGMT << 2) | (WLAN_FC_STYPE_ACTION << 4);
 	return nl80211_register_frame(bss, bss->nl_mgmt,
 				      type, match, match_len);
-}
-
-
-static int nl80211_init_connect_handle(struct i802_bss *bss)
-{
-	if (bss->nl_connect_or_ctrl) {
-		wpa_printf(MSG_DEBUG,
-			   "nl80211: Connect handle already created (nl_connect_or_ctrl=%p)",
-			   bss->nl_connect_or_ctrl);
-		return -1;
-	}
-
-	bss->nl_connect_or_ctrl = nl_create_handle(bss->nl_cb, "connect");
-	if (!bss->nl_connect_or_ctrl)
-		return -1;
-	nl80211_register_eloop_read(&bss->nl_connect_or_ctrl,
-				    wpa_driver_nl80211_event_receive,
-				    bss->nl_cb, 1);
-	return 0;
 }
 
 
@@ -2714,8 +2720,6 @@ wpa_driver_nl80211_finish_drv_init(struct wpa_driver_nl80211_data *drv,
 	if (drv->vendor_cmd_test_avail)
 		qca_vendor_test(drv);
 
-	nl80211_init_connect_handle(bss);
-
 	return 0;
 }
 
@@ -2827,9 +2831,6 @@ static void wpa_driver_nl80211_deinit(struct i802_bss *bss)
 		nl80211_mgmt_unsubscribe(bss, "deinit");
 		nl80211_del_p2pdev(bss);
 	}
-
-	if (bss->nl_connect_or_ctrl)
-		nl80211_destroy_eloop_handle(&bss->nl_connect_or_ctrl, 1);
 
 	nl80211_destroy_bss(drv->first_bss);
 

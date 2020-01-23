@@ -7914,19 +7914,51 @@ static void wpa_driver_nl80211_resume(void *priv)
 }
 
 
-static int nl80211_signal_monitor(void *priv, int threshold, int hysteresis)
+static int nl80211_signals_monitor(void *priv, int* thresholds, size_t n_thresholds, int hysteresis)
 {
 	struct i802_bss *bss = priv;
 	struct wpa_driver_nl80211_data *drv = bss->drv;
 	struct nl_msg *msg;
 	struct nlattr *cqm;
+	int i;
+	int sorted_correctly = 1;
+	const int disable = 0;
 
-	wpa_printf(MSG_DEBUG, "nl80211: Signal monitor threshold=%d "
-		   "hysteresis=%d", threshold, hysteresis);
+	if(!(drv->capa.flags & WPA_DRIVER_FLAGS_MULTIPLE_RSSI_THOLDS) &&
+	   n_thresholds > 1) {
+		wpa_printf(MSG_WARNING, "nl80211: signals monitor called with "
+					"multiple thresholds, but can only "
+					"monitor one");
+		return -1;
+	}
+
+	/* check if thresholds are sorted ascending */
+	for(i = 0; i < n_thresholds - 1 && n_thresholds > 0; ++i)
+		if(thresholds[i] < 0 || thresholds[i] > thresholds[i+1])
+			sorted_correctly = 0;
+
+	if(!sorted_correctly) {
+		wpa_printf(MSG_WARNING, "nl80211: signals monitor called with "
+					"multiple thresholds, but they are not "
+					"sorted correctly");
+		return -1;
+	}
+
+	for(i = 0; i < n_thresholds; ++i) {
+		wpa_printf(MSG_DEBUG, "nl80211: Signal monitor threshold[%d]=%d "
+		   "hysteresis=%d", i, thresholds[i], hysteresis);
+	}
+
+	if(thresholds == NULL || n_thresholds == 0) {
+		wpa_printf(MSG_DEBUG, "nl80211: Signal monitor threshold[0]=%d "
+		   "hysteresis=%d", disable, hysteresis);
+		n_thresholds = 1;
+	}
 
 	if (!(msg = nl80211_bss_msg(bss, 0, NL80211_CMD_SET_CQM)) ||
 	    !(cqm = nla_nest_start(msg, NL80211_ATTR_CQM)) ||
-	    nla_put_u32(msg, NL80211_ATTR_CQM_RSSI_THOLD, threshold) ||
+	    nla_put(msg, NL80211_ATTR_CQM_RSSI_THOLD, sizeof(u32) * n_thresholds,
+		    thresholds ? thresholds : &disable) ||
 	    nla_put_u32(msg, NL80211_ATTR_CQM_RSSI_HYST, hysteresis)) {
 		nlmsg_free(msg);
 		return -1;
@@ -11324,7 +11356,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.deinit_ap = wpa_driver_nl80211_deinit_ap,
 	.deinit_p2p_cli = wpa_driver_nl80211_deinit_p2p_cli,
 	.resume = wpa_driver_nl80211_resume,
-	.signal_monitor = nl80211_signal_monitor,
+	.signals_monitor = nl80211_signals_monitor,
 	.signal_poll = nl80211_signal_poll,
 	.channel_info = nl80211_channel_info,
 	.set_param = nl80211_set_param,

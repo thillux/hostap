@@ -1823,6 +1823,8 @@ struct wpa_driver_capa {
 #define WPA_DRIVER_FLAGS_CONTROL_PORT		0x0400000000000000ULL
 /** Driver supports VLAN offload */
 #define WPA_DRIVER_FLAGS_VLAN_OFFLOAD		0x0800000000000000ULL
+/** Driver supports multiple cqm rssi thresholds */
+#define WPA_DRIVER_FLAGS_MULTIPLE_RSSI_THOLDS	0x1000000000000000ULL
 	u64 flags;
 
 #define FULL_AP_CLIENT_STATE_SUPP(drv_flags) \
@@ -3450,7 +3452,7 @@ struct wpa_driver_ops {
 	 * should be generated assuming the signal strength has changed at
 	 * least %hysteresis from the previously indicated signal change event.
 	 */
-	int (*signal_monitor)(void *priv, int threshold, int hysteresis);
+	int (*signals_monitor)(void *priv, int* thresholds, size_t n_thresholds, int hysteresis);
 
 	/**
 	 * get_noa - Get current Notice of Absence attribute payload

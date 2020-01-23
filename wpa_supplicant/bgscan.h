@@ -47,6 +47,9 @@ extern const struct bgscan_ops bgscan_simple_ops;
 #ifdef CONFIG_BGSCAN_LEARN
 extern const struct bgscan_ops bgscan_learn_ops;
 #endif /* CONFIG_BGSCAN_LEARN */
+#ifdef CONFIG_BGSCAN_LEARN_11K
+extern const struct bgscan_ops bgscan_learn_11k_ops;
+#endif /* CONFIG_BGSCAN_LEARN_11K */
 
 #else /* CONFIG_BGSCAN */
 

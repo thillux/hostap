@@ -139,6 +139,27 @@ u8 * hostapd_eid_supp_rates(struct hostapd_data *hapd, u8 *eid)
 }
 
 
+u8 * hostapd_eid_rm_enabled_capab(struct hostapd_data *hapd, u8 *eid,
+					 size_t len)
+{
+	size_t i;
+
+	for (i = 0; i < RRM_CAPABILITIES_IE_LEN; i++) {
+		if (hapd->conf->radio_measurements[i])
+			break;
+	}
+
+	if (i == RRM_CAPABILITIES_IE_LEN || len < 2 + RRM_CAPABILITIES_IE_LEN)
+		return eid;
+
+	*eid++ = WLAN_EID_RRM_ENABLED_CAPABILITIES;
+	*eid++ = RRM_CAPABILITIES_IE_LEN;
+	os_memcpy(eid, hapd->conf->radio_measurements, RRM_CAPABILITIES_IE_LEN);
+
+	return eid + RRM_CAPABILITIES_IE_LEN;
+}
+
+
 u8 * hostapd_eid_ext_supp_rates(struct hostapd_data *hapd, u8 *eid)
 {
 	u8 *pos = eid;
@@ -3688,6 +3709,9 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 						   delta);
 	}
 #endif /* CONFIG_MBO */
+
+	/* radio measurement capabilities */
+	p = hostapd_eid_rm_enabled_capab(hapd, p, buf + buflen - p);
 
 #ifdef CONFIG_IEEE80211R_AP
 	if (sta && status_code == WLAN_STATUS_SUCCESS) {

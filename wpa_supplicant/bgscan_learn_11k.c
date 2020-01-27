@@ -592,12 +592,6 @@ static void bgscan_learn_11k_notify_beacon_loss(void *priv)
 
 	wpa_printf(MSG_DEBUG, "bgscan learn 11k: beacon loss");
 
-	// if(data->use_11k) {
-	// 	wpa_printf(MSG_DEBUG, "bgscan learn 11k: Trigger immediate neighbor report");
-	// 	eloop_cancel_timeout(bgscan_learn_11k_neighbor_timeout, data, NULL);
-	// 	eloop_register_timeout(0, 0, bgscan_learn_11k_neighbor_timeout, data, NULL);
-	// }
-
 	wpa_printf(MSG_DEBUG, "bgscan learn 11k: Trigger immediate scan");
 	eloop_cancel_timeout(bgscan_learn_11k_scan_timeout, data, NULL);
 	eloop_register_timeout(0, 0, bgscan_learn_11k_scan_timeout, data, NULL);

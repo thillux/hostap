@@ -48,6 +48,7 @@ struct bgscan_learn_11k_data {
 	int signal_hysteresis;
 	int num_fast_scans;
 	struct os_reltime last_roam;
+	int got_neighbor_report;
 };
 
 
@@ -266,6 +267,8 @@ static void bgscan_learn_11k_neighbor_cb(void *ctx, struct wpabuf *neighbor_rep)
 		goto out;
 	}
 
+	bgscan_data->got_neighbor_report = 1;
+
 	data = wpabuf_head_u8(neighbor_rep);
 	len = wpabuf_len(neighbor_rep);
 
@@ -369,7 +372,14 @@ static void bgscan_learn_11k_neighbor_timeout(void *eloop_ctx, void *timeout_ctx
 	struct bgscan_learn_11k_data *data = eloop_ctx;
 
 	if(data->use_11k) {
-		eloop_register_timeout(data->neighbor_rep_interval, 0, bgscan_learn_11k_neighbor_timeout, data, NULL);
+		eloop_cancel_timeout(bgscan_learn_11k_neighbor_timeout, data, NULL);
+		if (data->got_neighbor_report)
+			eloop_register_timeout(data->neighbor_rep_interval, 0, bgscan_learn_11k_neighbor_timeout,
+					       data, NULL);
+		else
+			eloop_register_timeout(2, 0, bgscan_learn_11k_neighbor_timeout,
+					       data, NULL);
+
 		wpas_rrm_send_neighbor_rep_request(data->wpa_s, NULL, 0, 0, bgscan_learn_11k_neighbor_cb, data);
 	}
 }
@@ -450,8 +460,12 @@ static void * bgscan_learn_11k_init(struct wpa_supplicant *wpa_s,
 
 	if(data->use_11k) {
 		wpas_rrm_send_neighbor_rep_request(wpa_s, NULL, 0, 0, bgscan_learn_11k_neighbor_cb, data);
-		eloop_register_timeout(data->neighbor_rep_interval, 0, bgscan_learn_11k_neighbor_timeout,
-						       data, NULL);
+		if (data->got_neighbor_report)
+			eloop_register_timeout(data->neighbor_rep_interval, 0, bgscan_learn_11k_neighbor_timeout,
+					       data, NULL);
+		else
+			eloop_register_timeout(2, 0, bgscan_learn_11k_neighbor_timeout,
+					       data, NULL);
 	}
 
 	/*

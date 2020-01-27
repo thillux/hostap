@@ -33,22 +33,32 @@ struct bgscan_learn_11k_bss {
 struct bgscan_learn_11k_data {
 	struct wpa_supplicant *wpa_s;
 	const struct wpa_ssid *ssid;
+
+	struct dl_list bss;
+
 	int scan_interval;
 	int neighbor_rep_interval;
-	int signal_threshold;
 	int short_interval; /* use if signal < threshold */
 	int long_interval; /* use if signal > threshold */
-	struct os_reltime last_bgscan;
-	struct dl_list bss;
+	
 	int *supp_freqs;
 	int probe_idx;
-	int use_11k;
+	
 	int last_signal;
 	int last_snr;
+	
 	int signal_hysteresis;
-	int roam_threshold;
+	int signal_threshold;
+	
+	int roam_threshold_rssi;
+	int roam_threshold_time;
+
 	int num_fast_scans;
+	
+	struct os_reltime last_bgscan;
 	struct os_reltime last_roam;
+
+	int use_11k;
 	int got_neighbor_report;
 	int num_11k_neighbors;
 };
@@ -428,7 +438,8 @@ static void * bgscan_learn_11k_init(struct wpa_supplicant *wpa_s,
 	data->signal_threshold = -60;
 	data->long_interval = 30; //300;
 	data->signal_hysteresis = 4;
-	data->roam_threshold = 15;
+	data->roam_threshold_rssi = 10;
+	data->roam_threshold_time = 5;
 	data->use_11k = wpa_s->rrm.rrm_used;
 
 	wpa_printf(MSG_DEBUG, "bgscan learn 11k: Signal strength threshold %d  "
@@ -473,6 +484,8 @@ static void * bgscan_learn_11k_init(struct wpa_supplicant *wpa_s,
 	 * level is below the bgscan threshold.
 	 */
 	os_get_reltime(&data->last_bgscan);
+
+	os_get_reltime(&data->last_roam);
 
 	return data;
 }
@@ -523,11 +536,11 @@ static int bgscan_learn_11k_should_roam(struct bgscan_learn_11k_data *data, stru
 		return 0;
 
 	os_get_reltime(&now);
-	if (now.sec <= data->last_roam.sec + 2)
+	if (now.sec <= data->last_roam.sec + data->roam_threshold_time)
 		return 0;
 
 	return data->last_signal <= data->signal_threshold &&
-	       res->level > data->last_signal + data->roam_threshold;
+	       res->level > data->last_signal + data->roam_threshold_rssi;
 }
 
 

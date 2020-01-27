@@ -42,7 +42,12 @@ struct bgscan_learn_11k_data {
 	int long_interval; /* use if signal > threshold */
 	
 	int *supp_freqs;
+	int *scan_freqs;
+	int current_scan_freq[2];
+	int current_scan_idx;
+	int current_num_scan_freqs;
 	int probe_idx;
+	struct wpa_driver_scan_params params;
 	
 	int last_signal;
 	int last_snr;
@@ -55,13 +60,19 @@ struct bgscan_learn_11k_data {
 
 	int num_fast_scans;
 	
-	struct os_reltime last_bgscan;
+	struct os_reltime last_bgscan_start;
+	struct os_reltime last_bgscan_finish;
+
 	struct os_reltime last_roam;
 
 	int use_11k;
 	int got_neighbor_report;
 	int num_11k_neighbors;
 };
+
+
+static void bgscan_learn_11k_scan_timeout(void *eloop_ctx, void *timeout_ctx);
+static void bgscan_learn_11k_perform_incremental_scan_timeout(void *eloop_ctx, void *timeout_ctx);
 
 
 static void bss_free(struct bgscan_learn_11k_bss *bss)
@@ -200,34 +211,56 @@ static int * bgscan_learn_11k_get_probe_freq(struct bgscan_learn_11k_data *data,
 }
 
 
+static int bgscan_learn_11k_perform_incremental_scan(struct bgscan_learn_11k_data *data)
+{
+	if (data->scan_freqs[data->current_scan_idx] != 0) {
+		data->current_scan_freq[0] = data->scan_freqs[data->current_scan_idx];
+		wpa_printf(MSG_DEBUG, "bgscan learn 11k: Incremental scan for %d", data->current_scan_freq[0]);
+		data->current_scan_idx++;
+	} else {
+		eloop_register_timeout(data->scan_interval, 0,
+		       bgscan_learn_11k_scan_timeout, data, NULL);
+		return 0;
+	}
+
+	if (wpa_supplicant_trigger_scan(data->wpa_s, &data->params))
+		return -1;
+	else {
+		eloop_register_timeout(0, 10000,
+		       bgscan_learn_11k_perform_incremental_scan_timeout, data, NULL);
+		return 0;
+	}
+
+}
+
+
 static void bgscan_learn_11k_scan_timeout(void *eloop_ctx, void *timeout_ctx)
 {
 	struct bgscan_learn_11k_data *data = eloop_ctx;
-	struct wpa_supplicant *wpa_s = data->wpa_s;
-	struct wpa_driver_scan_params params;
-	int *freqs = NULL;
+
 	size_t count, i;
 	char msg[100], *pos;
 
-	os_memset(&params, 0, sizeof(params));
-	params.num_ssids = 1;
-	params.ssids[0].ssid = data->ssid->ssid;
-	params.ssids[0].ssid_len = data->ssid->ssid_len;
+	os_free(data->scan_freqs);
+
+	os_memset(&data->params, 0, sizeof(data->params));
+	data->params.num_ssids = 1;
+	data->params.ssids[0].ssid = data->ssid->ssid;
+	data->params.ssids[0].ssid_len = data->ssid->ssid_len;
 	if (data->ssid->scan_freq)
-		params.freqs = data->ssid->scan_freq;
+		data->params.freqs = data->ssid->scan_freq;
 	else {
-		freqs = bgscan_learn_11k_get_freqs(data, &count);
+		data->scan_freqs = bgscan_learn_11k_get_freqs(data, &count);
 		wpa_printf(MSG_DEBUG, "bgscan learn 11k: BSSes in this ESS have "
 			   "been seen on %u channels", (unsigned int) count);
 		if(data->num_11k_neighbors < 2)
-			freqs = bgscan_learn_11k_get_probe_freq(data, freqs, count);
-
+			data->scan_freqs = bgscan_learn_11k_get_probe_freq(data, data->scan_freqs, count);
 		msg[0] = '\0';
 		pos = msg;
-		for (i = 0; freqs && freqs[i]; i++) {
+		for (i = 0; data->scan_freqs && data->scan_freqs[i]; i++) {
 			int ret;
 			ret = os_snprintf(pos, msg + sizeof(msg) - pos, " %d",
-					  freqs[i]);
+					  data->scan_freqs[i]);
 			if (os_snprintf_error(msg + sizeof(msg) - pos, ret))
 				break;
 			pos += ret;
@@ -235,18 +268,30 @@ static void bgscan_learn_11k_scan_timeout(void *eloop_ctx, void *timeout_ctx)
 		pos[0] = '\0';
 		wpa_printf(MSG_DEBUG, "bgscan learn 11k: Scanning frequencies:%s",
 			   msg);
-		params.freqs = freqs;
+
+		data->current_num_scan_freqs = count;
+		data->params.freqs = data->current_scan_freq;
 	}
 
+	data->current_scan_idx = 0;
 	wpa_printf(MSG_DEBUG, "bgscan learn 11k: Request a background scan");
-	if (wpa_supplicant_trigger_scan(wpa_s, &params)) {
+	if (bgscan_learn_11k_perform_incremental_scan(data)) {
 		wpa_printf(MSG_DEBUG, "bgscan learn 11k: Failed to trigger scan");
 		eloop_register_timeout(data->scan_interval, 0,
 				       bgscan_learn_11k_scan_timeout, data, NULL);
 	} else
-		os_get_reltime(&data->last_bgscan);
-	os_free(freqs);
+		os_get_reltime(&data->last_bgscan_start);
+	
 }
+
+
+static void bgscan_learn_11k_perform_incremental_scan_timeout(void *eloop_ctx, void *timeout_ctx)
+{
+	struct bgscan_learn_11k_data *data = eloop_ctx;
+
+	bgscan_learn_11k_perform_incremental_scan(data);
+}
+
 
 static void bgscan_learn_11k_neighbor_cb(void *ctx, struct wpabuf *neighbor_rep)
 {
@@ -483,7 +528,7 @@ static void * bgscan_learn_11k_init(struct wpa_supplicant *wpa_s,
 	 * us skip an immediate new scan in cases where the current signal
 	 * level is below the bgscan threshold.
 	 */
-	os_get_reltime(&data->last_bgscan);
+	os_get_reltime(&data->last_bgscan_start);
 
 	os_get_reltime(&data->last_roam);
 
@@ -507,6 +552,7 @@ static void bgscan_learn_11k_deinit(void *priv)
 		bss_free(bss);
 	}
 	os_free(data->supp_freqs);
+	os_free(data->scan_freqs);
 	os_free(data);
 }
 
@@ -567,9 +613,12 @@ static int bgscan_learn_11k_notify_scan(void *priv,
 	size_t num_bssid = 0;
 	struct wpa_scan_res *roam_res = NULL;
 	struct wpa_ssid *ssid = data->wpa_s->current_ssid;
-	struct wpa_signal_info siginfo;
+	struct wpa_signal_info siginfo;	
 
 	wpa_printf(MSG_DEBUG, "bgscan learn 11k: scan result notification");
+	os_get_reltime(&data->last_bgscan_finish);
+	double scan_duration = data->last_bgscan_finish.sec + data->last_bgscan_finish.usec * 1E-6 - data->last_bgscan_start.sec + data->last_bgscan_start.usec * 1E-6;
+	wpa_printf(MSG_DEBUG, "bgscan learn 11k: scan took %lf s", scan_duration);
 
 	if (wpa_drv_signal_poll(data->wpa_s, &siginfo) == 0) {
 		data->last_signal = siginfo.current_signal;
@@ -678,7 +727,7 @@ static void bgscan_learn_11k_notify_signal_change(void *priv, int above,
 		data->scan_interval = data->short_interval;
 		data->num_fast_scans = 0;
 		os_get_reltime(&now);
-		if (now.sec > data->last_bgscan.sec + 1)
+		if (now.sec > data->last_bgscan_start.sec + 1)
 			scan = 1;
 	} else if (data->scan_interval == data->short_interval && above) {
 		wpa_printf(MSG_DEBUG, "bgscan learn 11k: Start using long bgscan "
@@ -696,7 +745,7 @@ static void bgscan_learn_11k_notify_signal_change(void *priv, int above,
 		 * not yet scanned in a while.
 		 */
 		os_get_reltime(&now);
-		if (now.sec > data->last_bgscan.sec + wait_threshold) {
+		if (now.sec > data->last_bgscan_start.sec + wait_threshold) {
 			data->num_fast_scans++;
 			scan = 1;
 		}

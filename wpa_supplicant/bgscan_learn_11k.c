@@ -45,6 +45,7 @@ struct bgscan_learn_11k_data {
 	int use_11k;
 	int last_signal;
 	int signal_hysteresis;
+	int num_fast_scans;
 };
 
 
@@ -418,7 +419,7 @@ static void * bgscan_learn_11k_init(struct wpa_supplicant *wpa_s,
 	data->signal_threshold = -60;
 	data->long_interval = 30; //300;
 	data->signal_hysteresis = 4;
-	data->use_11k = wpas_rrm_send_neighbor_rep_request(wpa_s, NULL, 0, 0, bgscan_learn_11k_neighbor_cb, data) == 0;
+	data->use_11k = wpa_s->rrm.rrm_used;
 
 	wpa_printf(MSG_DEBUG, "bgscan learn 11k: Signal strength threshold %d  "
 		   "Short bgscan interval %d  Long bgscan interval %d use 11k %d",
@@ -445,9 +446,11 @@ static void * bgscan_learn_11k_init(struct wpa_supplicant *wpa_s,
 	eloop_register_timeout(data->scan_interval, 0, bgscan_learn_11k_scan_timeout,
 			       data, NULL);
 
-	if(data->use_11k)
+	if(data->use_11k) {
+		wpas_rrm_send_neighbor_rep_request(wpa_s, NULL, 0, 0, bgscan_learn_11k_neighbor_cb, data);
 		eloop_register_timeout(data->neighbor_rep_interval, 0, bgscan_learn_11k_neighbor_timeout,
 						       data, NULL);
+	}
 
 	/*
 	 * This function is called immediately after an association, so it is
@@ -589,9 +592,12 @@ static void bgscan_learn_11k_notify_beacon_loss(void *priv)
 
 	wpa_printf(MSG_DEBUG, "bgscan learn 11k: beacon loss");
 
-	wpa_printf(MSG_DEBUG, "bgscan learn 11k: Trigger immediate scan");
-	eloop_cancel_timeout(bgscan_learn_11k_scan_timeout, data, NULL);
-	eloop_register_timeout(0, 0, bgscan_learn_11k_scan_timeout, data, NULL);
+	if(data->num_fast_scans < 3) {
+		data->num_fast_scans++;
+		wpa_printf(MSG_DEBUG, "bgscan learn 11k: Trigger immediate scan");
+		eloop_cancel_timeout(bgscan_learn_11k_scan_timeout, data, NULL);
+		eloop_register_timeout(0, 0, bgscan_learn_11k_scan_timeout, data, NULL);
+	}
 }
 
 
@@ -616,6 +622,7 @@ static void bgscan_learn_11k_notify_signal_change(void *priv, int above,
 		wpa_printf(MSG_DEBUG, "bgscan learn 11k: Start using short bgscan "
 			   "interval");
 		data->scan_interval = data->short_interval;
+		data->num_fast_scans = 0;
 		os_get_reltime(&now);
 		if (now.sec > data->last_bgscan.sec + 1)
 			scan = 1;
@@ -623,17 +630,22 @@ static void bgscan_learn_11k_notify_signal_change(void *priv, int above,
 		wpa_printf(MSG_DEBUG, "bgscan learn 11k: Start using long bgscan "
 			   "interval");
 		data->scan_interval = data->long_interval;
+		data->num_fast_scans = 0;
 		eloop_cancel_timeout(bgscan_learn_11k_scan_timeout, data, NULL);
 		eloop_register_timeout(data->scan_interval, 0,
 				       bgscan_learn_11k_scan_timeout, data, NULL);
 	} else if (!above) {
+		const int wait_threshold = data->num_fast_scans > 3 ? 10 : 2;
+
 		/*
 		 * Signal dropped further 4 dB. Request a new scan if we have
 		 * not yet scanned in a while.
 		 */
 		os_get_reltime(&now);
-		if (now.sec > data->last_bgscan.sec + 2)
+		if (now.sec > data->last_bgscan.sec + wait_threshold) {
+			data->num_fast_scans++;
 			scan = 1;
+		}
 	}
 
 	if (scan) {

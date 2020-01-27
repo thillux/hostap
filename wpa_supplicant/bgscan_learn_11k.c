@@ -26,8 +26,8 @@ struct bgscan_learn_11k_bss {
 	u8 bssid[ETH_ALEN];
 	int freq;
 	u8 *neigh; /* num_neigh * ETH_ALEN buffer */
-	int has_11k_neighbor;
 	size_t num_neigh;
+	int has_11k_neighbor;
 };
 
 struct bgscan_learn_11k_data {
@@ -46,9 +46,11 @@ struct bgscan_learn_11k_data {
 	int last_signal;
 	int last_snr;
 	int signal_hysteresis;
+	int roam_threshold;
 	int num_fast_scans;
 	struct os_reltime last_roam;
 	int got_neighbor_report;
+	int num_11k_neighbors;
 };
 
 
@@ -75,23 +77,25 @@ static int bssid_in_array(u8 *array, size_t array_len, const u8 *bssid)
 }
 
 
-static void bgscan_learn_11k_add_neighbor(struct bgscan_learn_11k_bss *bss,
+static int bgscan_learn_11k_add_neighbor(struct bgscan_learn_11k_bss *bss,
 				      const u8 *bssid)
 {
 	u8 *n;
 
 	if (os_memcmp(bss->bssid, bssid, ETH_ALEN) == 0)
-		return;
+		return 0;
 	if (bssid_in_array(bss->neigh, bss->num_neigh, bssid))
-		return;
+		return 0;
 
 	n = os_realloc_array(bss->neigh, bss->num_neigh + 1, ETH_ALEN);
 	if (n == NULL)
-		return;
+		return 0;
 
 	os_memcpy(n + bss->num_neigh * ETH_ALEN, bssid, ETH_ALEN);
 	bss->neigh = n;
 	bss->num_neigh++;
+
+	return 1;
 }
 
 
@@ -129,19 +133,12 @@ static int * bgscan_learn_11k_get_freqs(struct bgscan_learn_11k_data *data,
 {
 	struct bgscan_learn_11k_bss *bss;
 	int *freqs = NULL, *n;
-	int num_11k_neighbors = 0;
 	*count = 0;
-
-	/* count 11k neighbors */
-	dl_list_for_each(bss, &data->bss, struct bgscan_learn_11k_bss, list) {
-		if (bss->has_11k_neighbor)
-			num_11k_neighbors++;
-	}
 
 	dl_list_for_each(bss, &data->bss, struct bgscan_learn_11k_bss, list) {
 		if (in_array(freqs, bss->freq))
 			continue;
-		if (num_11k_neighbors > 1 && !bss->has_11k_neighbor)
+		if (data->num_11k_neighbors > 1 && !bss->has_11k_neighbor)
 			continue;
 		if (!in_array(data->supp_freqs, bss->freq))
 			continue;
@@ -212,7 +209,8 @@ static void bgscan_learn_11k_scan_timeout(void *eloop_ctx, void *timeout_ctx)
 		freqs = bgscan_learn_11k_get_freqs(data, &count);
 		wpa_printf(MSG_DEBUG, "bgscan learn 11k: BSSes in this ESS have "
 			   "been seen on %u channels", (unsigned int) count);
-		freqs = bgscan_learn_11k_get_probe_freq(data, freqs, count);
+		if(data->num_11k_neighbors < 2)
+			freqs = bgscan_learn_11k_get_probe_freq(data, freqs, count);
 
 		msg[0] = '\0';
 		pos = msg;
@@ -355,9 +353,8 @@ static void bgscan_learn_11k_neighbor_cb(void *ctx, struct wpabuf *neighbor_rep)
 				bss->freq = freq;
 				dl_list_add(&bgscan_data->bss, &bss->list);
 			}
+			bgscan_data->num_11k_neighbors += bss->has_11k_neighbor == 0;
 			bss->has_11k_neighbor = 1;
-
-			bgscan_learn_11k_add_neighbor(bss, nr);
 		}
 		data = end;
 		len -= 2 + nr_len;
@@ -431,6 +428,7 @@ static void * bgscan_learn_11k_init(struct wpa_supplicant *wpa_s,
 	data->signal_threshold = -60;
 	data->long_interval = 30; //300;
 	data->signal_hysteresis = 4;
+	data->roam_threshold = 15;
 	data->use_11k = wpa_s->rrm.rrm_used;
 
 	wpa_printf(MSG_DEBUG, "bgscan learn 11k: Signal strength threshold %d  "
@@ -529,7 +527,7 @@ static int bgscan_learn_11k_should_roam(struct bgscan_learn_11k_data *data, stru
 		return 0;
 
 	return data->last_signal <= data->signal_threshold &&
-	       res->level > data->last_signal + data->signal_hysteresis;
+	       res->level > data->last_signal + data->roam_threshold;
 }
 
 
@@ -611,10 +609,9 @@ static int bgscan_learn_11k_notify_scan(void *priv,
 		data->wpa_s->reassociate = 1;
 		os_get_reltime(&data->last_roam);
 		wpa_supplicant_connect(data->wpa_s, roam_bss, ssid);
-		return 1;
-	} else {
-		return 0;
 	}
+
+	return 1;
 }
 
 

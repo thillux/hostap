@@ -18,6 +18,7 @@
 #include "driver_i.h"
 #include "scan.h"
 #include "bgscan.h"
+#include "bss.h"
 
 struct bgscan_learn_bss {
 	struct dl_list list;
@@ -40,6 +41,7 @@ struct bgscan_learn_data {
 	int *supp_freqs;
 	int probe_idx;
 	int use_11k;
+	int last_signal;
 };
 
 
@@ -320,6 +322,12 @@ static void bgscan_learn_neighbor_cb(void *ctx, struct wpabuf *neighbor_rep)
 					freq = 2407 + chan * 5;
 				}
 				break;
+			case 124:
+			case 125:
+				if(chan >= 1 && chan <= 200) {
+					freq = 5000 + chan * 5;
+				}
+				break;
 		}
 		if(freq < 0) {
 			wpa_printf(MSG_DEBUG, "bgscan learn 11k: unknown operclass %i chan %i", operclass, chan);
@@ -417,8 +425,8 @@ static void * bgscan_learn_init(struct wpa_supplicant *wpa_s,
 	data->wpa_s = wpa_s;
 	data->ssid = ssid;
 	data->short_interval = 30;
-	data->signal_threshold = -75;
-	data->long_interval = 300;
+	data->signal_threshold = -60;
+	data->long_interval = 30; //300;
 	data->use_11k = wpas_rrm_send_neighbor_rep_request(wpa_s, NULL, 0, 0, bgscan_learn_neighbor_cb, data) == 0;
 
 	wpa_printf(MSG_DEBUG, "bgscan learn 11k: Signal strength threshold %d  "
@@ -506,8 +514,15 @@ static int bgscan_learn_notify_scan(void *priv,
 #define MAX_BSS 50
 	u8 bssid[MAX_BSS * ETH_ALEN];
 	size_t num_bssid = 0;
+	struct wpa_bss *roam_bss = NULL;
+	struct wpa_ssid *ssid = data->wpa_s->current_ssid;
+	struct wpa_signal_info siginfo;
 
 	wpa_printf(MSG_DEBUG, "bgscan learn 11k: scan result notification");
+
+	if (wpa_drv_signal_poll(data->wpa_s, &siginfo) == 0) {
+		data->last_signal = siginfo.current_signal;
+	}
 
 	eloop_cancel_timeout(bgscan_learn_scan_timeout, data, NULL);
 	eloop_register_timeout(data->scan_interval, 0, bgscan_learn_scan_timeout,
@@ -555,16 +570,18 @@ static int bgscan_learn_notify_scan(void *priv,
 			u8 *addr = bssid + j * ETH_ALEN;
 			bgscan_learn_add_neighbor(bss, addr);
 		}
+
+		if(data->last_signal <= data->signal_threshold && res->level > data->signal_threshold) {
+			roam_bss = wpa_bss_get(data->wpa_s, bssid, ssid->ssid, ssid->ssid_len);
+		}
 	}
 
-	/*
-	 * A more advanced bgscan could process scan results internally, select
-	 * the BSS and request roam if needed. This sample uses the existing
-	 * BSS/ESS selection routine. Change this to return 1 if selection is
-	 * done inside the bgscan module.
-	 */
+	if(roam_bss) {
+		data->wpa_s->reassociate = 1;
+		wpa_supplicant_connect(data->wpa_s, roam_bss, ssid);
+	}
 
-	return 0;
+	return 1;
 }
 
 
@@ -573,12 +590,16 @@ static void bgscan_learn_notify_beacon_loss(void *priv)
 	struct bgscan_learn_data *data = priv;
 
 	wpa_printf(MSG_DEBUG, "bgscan learn 11k: beacon loss");
-	/* TODO: speed up background scanning */
 
 	if(data->use_11k) {
+		wpa_printf(MSG_DEBUG, "bgscan learn 11k: Trigger immediate neighbor report");
 		eloop_cancel_timeout(bgscan_learn_neighbor_timeout, data, NULL);
 		eloop_register_timeout(0, 0, bgscan_learn_neighbor_timeout, data, NULL);
 	}
+
+	wpa_printf(MSG_DEBUG, "bgscan learn 11k: Trigger immediate scan");
+	eloop_cancel_timeout(bgscan_learn_scan_timeout, data, NULL);
+	eloop_register_timeout(0, 0, bgscan_learn_scan_timeout, data, NULL);
 }
 
 

@@ -528,23 +528,32 @@ static int bgscan_learn_11k_bss_match(struct bgscan_learn_11k_data *data,
 }
 
 
-static int bgscan_learn_11k_should_roam(struct bgscan_learn_11k_data *data, struct wpa_scan_res *res)
+static struct wpa_scan_res * bgscan_learn_11k_should_roam(struct bgscan_learn_11k_data *data, struct wpa_scan_res *res, struct wpa_scan_res *roam_res)
 {
 	struct os_reltime now;
 
 	if (data->last_snr >= 25) {
 		wpa_printf(MSG_DEBUG, "bgscan learn 11k: don't roam, snr too good %d > 25", data->last_snr);
-		return 0;
+		goto out;
 	}
 
 	os_get_reltime(&now);
 	if (now.sec <= data->last_roam.sec + data->roam_threshold_time) {
 		wpa_printf(MSG_DEBUG, "bgscan learn 11k: don't roam, last roam was %li s ago", now.sec - data->last_roam.sec);
-		return 0;
+		goto out;
 	}
 
-	return data->last_signal <= data->signal_threshold &&
-	       res->level > data->last_signal + data->roam_threshold_rssi;
+	if (memcmp(data->wpa_s->bssid, res->bssid, ETH_ALEN) == 0) {
+		wpa_printf(MSG_DEBUG, "bgscan learn 11k: don't roam, target is current bssid");
+		goto out;
+	}
+
+	if (data->last_signal <= data->signal_threshold &&
+	    res->level > data->last_signal + data->roam_threshold_rssi)
+		roam_res = res;
+
+out:
+	return roam_res;
 }
 
 
@@ -556,7 +565,7 @@ static int bgscan_learn_11k_notify_scan(void *priv,
 #define MAX_BSS 50
 	u8 bssid[MAX_BSS * ETH_ALEN];
 	size_t num_bssid = 0;
-	struct wpa_bss *roam_bss = NULL;
+	struct wpa_scan_res *roam_res = NULL;
 	struct wpa_ssid *ssid = data->wpa_s->current_ssid;
 	struct wpa_signal_info siginfo;
 
@@ -617,12 +626,11 @@ static int bgscan_learn_11k_notify_scan(void *priv,
 			bgscan_learn_11k_add_neighbor(bss, addr);
 		}
 
-		if (bgscan_learn_11k_should_roam(data, res)) {
-			roam_bss = wpa_bss_get(data->wpa_s, res->bssid, ssid->ssid, ssid->ssid_len);
-		}
+		roam_res = bgscan_learn_11k_should_roam(data, res, roam_res);
 	}
 
-	if(roam_bss) {
+	if(roam_res) {
+		struct wpa_bss *roam_bss = wpa_bss_get(data->wpa_s, roam_res->bssid, ssid->ssid, ssid->ssid_len);
 		data->wpa_s->reassociate = 1;
 		os_get_reltime(&data->last_roam);
 		wpa_supplicant_connect(data->wpa_s, roam_bss, ssid);

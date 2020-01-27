@@ -226,8 +226,6 @@ static int bgscan_learn_11k_perform_incremental_scan(struct bgscan_learn_11k_dat
 	if (wpa_supplicant_trigger_scan(data->wpa_s, &data->params))
 		return -1;
 	else {
-		eloop_register_timeout(0, 10000,
-		       bgscan_learn_11k_perform_incremental_scan_timeout, data, NULL);
 		return 0;
 	}
 
@@ -269,7 +267,7 @@ static void bgscan_learn_11k_scan_timeout(void *eloop_ctx, void *timeout_ctx)
 		wpa_printf(MSG_DEBUG, "bgscan learn 11k: Scanning frequencies:%s",
 			   msg);
 
-		data->current_num_scan_freqs = count;
+		data->current_num_scan_freqs = count + 1;
 		data->params.freqs = data->current_scan_freq;
 	}
 
@@ -616,9 +614,6 @@ static int bgscan_learn_11k_notify_scan(void *priv,
 	struct wpa_signal_info siginfo;	
 
 	wpa_printf(MSG_DEBUG, "bgscan learn 11k: scan result notification");
-	os_get_reltime(&data->last_bgscan_finish);
-	double scan_duration = data->last_bgscan_finish.sec + data->last_bgscan_finish.usec * 1E-6 - data->last_bgscan_start.sec + data->last_bgscan_start.usec * 1E-6;
-	wpa_printf(MSG_DEBUG, "bgscan learn 11k: scan took %lf s", scan_duration);
 
 	if (wpa_drv_signal_poll(data->wpa_s, &siginfo) == 0) {
 		data->last_signal = siginfo.current_signal;
@@ -627,11 +622,7 @@ static int bgscan_learn_11k_notify_scan(void *priv,
 		else
 			data->last_snr = -1;
 	}
-
-	eloop_cancel_timeout(bgscan_learn_11k_scan_timeout, data, NULL);
-	eloop_register_timeout(data->scan_interval, 0, bgscan_learn_11k_scan_timeout,
-			       data, NULL);
-
+	
 	for (i = 0; i < scan_res->num; i++) {
 		struct wpa_scan_res *res = scan_res->res[i];
 		if (!bgscan_learn_11k_bss_match(data, res))
@@ -676,6 +667,18 @@ static int bgscan_learn_11k_notify_scan(void *priv,
 		}
 
 		roam_res = bgscan_learn_11k_should_roam(data, res, roam_res);
+	}
+
+	if(data->current_scan_idx < data->current_num_scan_freqs) {
+		eloop_cancel_timeout(bgscan_learn_11k_perform_incremental_scan_timeout, data, NULL);
+		eloop_register_timeout(0, 10000,
+		       bgscan_learn_11k_perform_incremental_scan_timeout, data, NULL);
+		
+	} else {
+		eloop_cancel_timeout(bgscan_learn_11k_scan_timeout, data, NULL);
+		eloop_register_timeout(data->scan_interval, 0, bgscan_learn_11k_scan_timeout,
+			       data, NULL);
+
 	}
 
 	if(roam_res) {

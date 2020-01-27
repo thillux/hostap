@@ -532,12 +532,16 @@ static int bgscan_learn_11k_should_roam(struct bgscan_learn_11k_data *data, stru
 {
 	struct os_reltime now;
 
-	if (data->last_snr >= 25)
+	if (data->last_snr >= 25) {
+		wpa_printf(MSG_DEBUG, "bgscan learn 11k: don't roam, snr too good %d > 25", data->last_snr);
 		return 0;
+	}
 
 	os_get_reltime(&now);
-	if (now.sec <= data->last_roam.sec + data->roam_threshold_time)
+	if (now.sec <= data->last_roam.sec + data->roam_threshold_time) {
+		wpa_printf(MSG_DEBUG, "bgscan learn 11k: don't roam, last roam was %li s ago", now.sec - data->last_roam.sec);
 		return 0;
+	}
 
 	return data->last_signal <= data->signal_threshold &&
 	       res->level > data->last_signal + data->roam_threshold_rssi;

@@ -497,6 +497,13 @@ static int bgscan_learn_11k_bss_match(struct bgscan_learn_11k_data *data,
 }
 
 
+static int bgscan_learn_11k_should_roam(struct bgscan_learn_11k_data *data, struct wpa_scan_res *res)
+{
+	return data->last_signal <= data->signal_threshold &&
+	       res->level > data->last_signal + data->signal_hysteresis;
+}
+
+
 static int bgscan_learn_11k_notify_scan(void *priv,
 				    struct wpa_scan_results *scan_res)
 {
@@ -562,8 +569,8 @@ static int bgscan_learn_11k_notify_scan(void *priv,
 			bgscan_learn_11k_add_neighbor(bss, addr);
 		}
 
-		if(data->last_signal <= data->signal_threshold && res->level > data->last_signal + data->signal_hysteresis) {
-			roam_bss = wpa_bss_get(data->wpa_s, bssid, ssid->ssid, ssid->ssid_len);
+		if (bgscan_learn_11k_should_roam(data, res)) {
+			roam_bss = wpa_bss_get(data->wpa_s, res->bssid, ssid->ssid, ssid->ssid_len);
 		}
 	}
 

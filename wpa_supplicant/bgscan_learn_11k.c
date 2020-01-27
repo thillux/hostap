@@ -44,8 +44,10 @@ struct bgscan_learn_11k_data {
 	int probe_idx;
 	int use_11k;
 	int last_signal;
+	int last_snr;
 	int signal_hysteresis;
 	int num_fast_scans;
+	struct os_reltime last_roam;
 };
 
 
@@ -330,30 +332,30 @@ static void bgscan_learn_11k_neighbor_cb(void *ctx, struct wpabuf *neighbor_rep)
 		operclass = nr[ETH_ALEN + 4];
 		chan = nr[ETH_ALEN + 5];
 		freq = ieee80211_chan_to_freq(NULL, operclass, chan);
+
 		if(freq < 0) {
 			wpa_printf(MSG_DEBUG, "bgscan learn 11k: unknown operclass %i chan %i", operclass, chan);
+		} else {
+			bss = bgscan_learn_11k_get_bss(bgscan_data, nr);
+			if (bss && bss->freq != freq) {
+				wpa_printf(MSG_DEBUG, "bgscan learn 11k: Update BSS "
+				   MACSTR " freq %d -> %d",
+					   MAC2STR(nr), bss->freq, freq);
+				bss->freq = freq;
+			} else if (!bss) {
+				wpa_printf(MSG_DEBUG, "bgscan learn 11k: Add BSS " MACSTR
+					   " freq=%d", MAC2STR(nr), freq);
+				bss = os_zalloc(sizeof(*bss));
+				if (!bss)
+					continue;
+				os_memcpy(bss->bssid, nr, ETH_ALEN);
+				bss->freq = freq;
+				dl_list_add(&bgscan_data->bss, &bss->list);
+			}
+			bss->has_11k_neighbor = 1;
+
+			bgscan_learn_11k_add_neighbor(bss, nr);
 		}
-
-		bss = bgscan_learn_11k_get_bss(bgscan_data, nr);
-		if (bss && bss->freq != freq) {
-			wpa_printf(MSG_DEBUG, "bgscan learn 11k: Update BSS "
-			   MACSTR " freq %d -> %d",
-				   MAC2STR(nr), bss->freq, freq);
-			bss->freq = freq;
-		} else if (!bss) {
-			wpa_printf(MSG_DEBUG, "bgscan learn 11k: Add BSS " MACSTR
-				   " freq=%d", MAC2STR(nr), freq);
-			bss = os_zalloc(sizeof(*bss));
-			if (!bss)
-				continue;
-			os_memcpy(bss->bssid, nr, ETH_ALEN);
-			bss->freq = freq;
-			dl_list_add(&bgscan_data->bss, &bss->list);
-		}
-		bss->has_11k_neighbor = 1;
-
-		bgscan_learn_11k_add_neighbor(bss, nr);
-
 		data = end;
 		len -= 2 + nr_len;
 	}
@@ -471,6 +473,7 @@ static void bgscan_learn_11k_deinit(void *priv)
 
 	eloop_cancel_timeout(bgscan_learn_11k_scan_timeout, data, NULL);
 	eloop_cancel_timeout(bgscan_learn_11k_neighbor_timeout, data, NULL);
+	wpas_rrm_reset(data->wpa_s);
 	if (data->signal_threshold)
 		wpa_drv_signals_monitor(data->wpa_s, NULL, 0, 0);
 	dl_list_for_each_safe(bss, n, &data->bss, struct bgscan_learn_11k_bss,
@@ -502,6 +505,15 @@ static int bgscan_learn_11k_bss_match(struct bgscan_learn_11k_data *data,
 
 static int bgscan_learn_11k_should_roam(struct bgscan_learn_11k_data *data, struct wpa_scan_res *res)
 {
+	struct os_reltime now;
+
+	if (data->last_snr >= 25)
+		return 0;
+
+	os_get_reltime(&now);
+	if (now.sec <= data->last_roam.sec + 2)
+		return 0;
+
 	return data->last_signal <= data->signal_threshold &&
 	       res->level > data->last_signal + data->signal_hysteresis;
 }
@@ -523,6 +535,10 @@ static int bgscan_learn_11k_notify_scan(void *priv,
 
 	if (wpa_drv_signal_poll(data->wpa_s, &siginfo) == 0) {
 		data->last_signal = siginfo.current_signal;
+		if (siginfo.current_noise != WPA_INVALID_NOISE)
+			data->last_snr = siginfo.current_signal - siginfo.current_noise;
+		else
+			data->last_snr = -1;
 	}
 
 	eloop_cancel_timeout(bgscan_learn_11k_scan_timeout, data, NULL);
@@ -579,10 +595,12 @@ static int bgscan_learn_11k_notify_scan(void *priv,
 
 	if(roam_bss) {
 		data->wpa_s->reassociate = 1;
+		os_get_reltime(&data->last_roam);
 		wpa_supplicant_connect(data->wpa_s, roam_bss, ssid);
+		return 1;
+	} else {
+		return 0;
 	}
-
-	return 1;
 }
 
 

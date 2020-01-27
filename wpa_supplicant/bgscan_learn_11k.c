@@ -25,6 +25,7 @@ struct bgscan_learn_11k_bss {
 	u8 bssid[ETH_ALEN];
 	int freq;
 	u8 *neigh; /* num_neigh * ETH_ALEN buffer */
+	int has_11k_neighbor;
 	size_t num_neigh;
 };
 
@@ -123,11 +124,19 @@ static int * bgscan_learn_11k_get_freqs(struct bgscan_learn_11k_data *data,
 {
 	struct bgscan_learn_11k_bss *bss;
 	int *freqs = NULL, *n;
-
+	int num_11k_neighbors = 0;
 	*count = 0;
+
+	/* count 11k neighbors */
+	dl_list_for_each(bss, &data->bss, struct bgscan_learn_11k_bss, list) {
+		if (bss->has_11k_neighbor)
+			num_11k_neighbors++;
+	}
 
 	dl_list_for_each(bss, &data->bss, struct bgscan_learn_11k_bss, list) {
 		if (in_array(freqs, bss->freq))
+			continue;
+		if (num_11k_neighbors > 1 && !bss->has_11k_neighbor)
 			continue;
 		n = os_realloc_array(freqs, *count + 2, sizeof(int));
 		if (n == NULL)
@@ -332,8 +341,6 @@ static void bgscan_learn_11k_neighbor_cb(void *ctx, struct wpabuf *neighbor_rep)
 		}
 		if(freq < 0) {
 			wpa_printf(MSG_DEBUG, "bgscan learn 11k: unknown operclass %i chan %i", operclass, chan);
-		} else {
-			wpa_printf(MSG_DEBUG, "bgscan learn 11k: learnt chan %i with freq %i", chan, freq);
 		}
 
 		bss = bgscan_learn_11k_get_bss(bgscan_data, nr);
@@ -352,17 +359,9 @@ static void bgscan_learn_11k_neighbor_cb(void *ctx, struct wpabuf *neighbor_rep)
 			bss->freq = freq;
 			dl_list_add(&bgscan_data->bss, &bss->list);
 		}
+		bss->has_11k_neighbor = 1;
 
 		bgscan_learn_11k_add_neighbor(bss, nr);
-
-		wpa_msg(wpa_s, MSG_INFO, RRM_EVENT_NEIGHBOR_REP_RXED
-			"bssid=" MACSTR
-			" info=0x%x op_class=%u chan=%u phy_type=%u%s%s%s%s",
-			MAC2STR(nr), WPA_GET_LE32(nr + ETH_ALEN),
-			nr[ETH_ALEN + 4], nr[ETH_ALEN + 5],
-			nr[ETH_ALEN + 6],
-			lci[0] ? " lci=" : "", lci,
-			civic[0] ? " civic=" : "", civic);
 
 		data = end;
 		len -= 2 + nr_len;

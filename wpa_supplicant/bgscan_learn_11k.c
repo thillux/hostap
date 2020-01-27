@@ -42,6 +42,7 @@ struct bgscan_learn_11k_data {
 	int probe_idx;
 	int use_11k;
 	int last_signal;
+	int signal_hysteresis;
 };
 
 
@@ -424,9 +425,10 @@ static void * bgscan_learn_11k_init(struct wpa_supplicant *wpa_s,
 	dl_list_init(&data->bss);
 	data->wpa_s = wpa_s;
 	data->ssid = ssid;
-	data->short_interval = 30;
+	data->short_interval = 5;
 	data->signal_threshold = -60;
 	data->long_interval = 30; //300;
+	data->signal_hysteresis = 4;
 	data->use_11k = wpas_rrm_send_neighbor_rep_request(wpa_s, NULL, 0, 0, bgscan_learn_11k_neighbor_cb, data) == 0;
 
 	wpa_printf(MSG_DEBUG, "bgscan learn 11k: Signal strength threshold %d  "
@@ -435,14 +437,14 @@ static void * bgscan_learn_11k_init(struct wpa_supplicant *wpa_s,
 		   data->long_interval, data->use_11k);
 
 	if (data->signal_threshold &&
-	    wpa_drv_signals_monitor(wpa_s, &data->signal_threshold, 1, 4) < 0) {
+	    wpa_drv_signals_monitor(wpa_s, &data->signal_threshold, 1, data->signal_hysteresis) < 0) {
 		wpa_printf(MSG_ERROR, "bgscan learn 11k: Failed to enable "
 			   "signal strength monitoring");
 	}
 
 	data->supp_freqs = bgscan_learn_11k_get_supp_freqs(wpa_s);
 	data->scan_interval = data->short_interval;
-	data->neighbor_rep_interval = data->short_interval;
+	data->neighbor_rep_interval = 60;
 	if (data->signal_threshold) {
 		/* Poll for signal info to set initial scan interval */
 		struct wpa_signal_info siginfo;
@@ -571,7 +573,7 @@ static int bgscan_learn_11k_notify_scan(void *priv,
 			bgscan_learn_11k_add_neighbor(bss, addr);
 		}
 
-		if(data->last_signal <= data->signal_threshold && res->level > data->signal_threshold) {
+		if(data->last_signal <= data->signal_threshold && res->level > data->last_signal + data->signal_hysteresis) {
 			roam_bss = wpa_bss_get(data->wpa_s, bssid, ssid->ssid, ssid->ssid_len);
 		}
 	}
@@ -591,11 +593,11 @@ static void bgscan_learn_11k_notify_beacon_loss(void *priv)
 
 	wpa_printf(MSG_DEBUG, "bgscan learn 11k: beacon loss");
 
-	if(data->use_11k) {
-		wpa_printf(MSG_DEBUG, "bgscan learn 11k: Trigger immediate neighbor report");
-		eloop_cancel_timeout(bgscan_learn_11k_neighbor_timeout, data, NULL);
-		eloop_register_timeout(0, 0, bgscan_learn_11k_neighbor_timeout, data, NULL);
-	}
+	// if(data->use_11k) {
+	// 	wpa_printf(MSG_DEBUG, "bgscan learn 11k: Trigger immediate neighbor report");
+	// 	eloop_cancel_timeout(bgscan_learn_11k_neighbor_timeout, data, NULL);
+	// 	eloop_register_timeout(0, 0, bgscan_learn_11k_neighbor_timeout, data, NULL);
+	// }
 
 	wpa_printf(MSG_DEBUG, "bgscan learn 11k: Trigger immediate scan");
 	eloop_cancel_timeout(bgscan_learn_11k_scan_timeout, data, NULL);
@@ -640,7 +642,7 @@ static void bgscan_learn_11k_notify_signal_change(void *priv, int above,
 		 * not yet scanned in a while.
 		 */
 		os_get_reltime(&now);
-		if (now.sec > data->last_bgscan.sec + 10)
+		if (now.sec > data->last_bgscan.sec + 2)
 			scan = 1;
 	}
 
@@ -648,10 +650,6 @@ static void bgscan_learn_11k_notify_signal_change(void *priv, int above,
 		wpa_printf(MSG_DEBUG, "bgscan learn 11k: Trigger immediate scan");
 		eloop_cancel_timeout(bgscan_learn_11k_scan_timeout, data, NULL);
 		eloop_register_timeout(0, 0, bgscan_learn_11k_scan_timeout, data, NULL);
-	} else if(data->use_11k) {
-		wpa_printf(MSG_DEBUG, "bgscan learn 11k: Trigger immediate neighbor report");
-		eloop_cancel_timeout(bgscan_learn_11k_neighbor_timeout, data, NULL);
-		eloop_register_timeout(0, 0, bgscan_learn_11k_neighbor_timeout, data, NULL);
 	}
 }
 

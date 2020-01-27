@@ -12,6 +12,7 @@
 #include "eloop.h"
 #include "list.h"
 #include "common/ieee802_11_defs.h"
+#include "common/ieee802_11_common.h"
 #include "drivers/driver.h"
 #include "config_ssid.h"
 #include "wpa_supplicant_i.h"
@@ -137,6 +138,8 @@ static int * bgscan_learn_11k_get_freqs(struct bgscan_learn_11k_data *data,
 		if (in_array(freqs, bss->freq))
 			continue;
 		if (num_11k_neighbors > 1 && !bss->has_11k_neighbor)
+			continue;
+		if (!in_array(data->supp_freqs, bss->freq))
 			continue;
 		n = os_realloc_array(freqs, *count + 2, sizeof(int));
 		if (n == NULL)
@@ -325,20 +328,7 @@ static void bgscan_learn_11k_neighbor_cb(void *ctx, struct wpabuf *neighbor_rep)
 
 		operclass = nr[ETH_ALEN + 4];
 		chan = nr[ETH_ALEN + 5];
-		freq = -1;
-		switch(operclass) {
-			case 81:
-				if(chan >= 1 && chan <= 14) {
-					freq = 2407 + chan * 5;
-				}
-				break;
-			case 124:
-			case 125:
-				if(chan >= 1 && chan <= 200) {
-					freq = 5000 + chan * 5;
-				}
-				break;
-		}
+		freq = ieee80211_chan_to_freq(NULL, operclass, chan);
 		if(freq < 0) {
 			wpa_printf(MSG_DEBUG, "bgscan learn 11k: unknown operclass %i chan %i", operclass, chan);
 		}

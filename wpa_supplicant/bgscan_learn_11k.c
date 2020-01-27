@@ -20,7 +20,7 @@
 #include "bgscan.h"
 #include "bss.h"
 
-struct bgscan_learn_bss {
+struct bgscan_learn_11k_bss {
 	struct dl_list list;
 	u8 bssid[ETH_ALEN];
 	int freq;
@@ -28,7 +28,7 @@ struct bgscan_learn_bss {
 	size_t num_neigh;
 };
 
-struct bgscan_learn_data {
+struct bgscan_learn_11k_data {
 	struct wpa_supplicant *wpa_s;
 	const struct wpa_ssid *ssid;
 	int scan_interval;
@@ -45,7 +45,7 @@ struct bgscan_learn_data {
 };
 
 
-static void bss_free(struct bgscan_learn_bss *bss)
+static void bss_free(struct bgscan_learn_11k_bss *bss)
 {
 	os_free(bss->neigh);
 	os_free(bss);
@@ -68,7 +68,7 @@ static int bssid_in_array(u8 *array, size_t array_len, const u8 *bssid)
 }
 
 
-static void bgscan_learn_add_neighbor(struct bgscan_learn_bss *bss,
+static void bgscan_learn_11k_add_neighbor(struct bgscan_learn_11k_bss *bss,
 				      const u8 *bssid)
 {
 	u8 *n;
@@ -88,12 +88,12 @@ static void bgscan_learn_add_neighbor(struct bgscan_learn_bss *bss,
 }
 
 
-static struct bgscan_learn_bss * bgscan_learn_get_bss(
-	struct bgscan_learn_data *data, const u8 *bssid)
+static struct bgscan_learn_11k_bss * bgscan_learn_11k_get_bss(
+	struct bgscan_learn_11k_data *data, const u8 *bssid)
 {
-	struct bgscan_learn_bss *bss;
+	struct bgscan_learn_11k_bss *bss;
 
-	dl_list_for_each(bss, &data->bss, struct bgscan_learn_bss, list) {
+	dl_list_for_each(bss, &data->bss, struct bgscan_learn_11k_bss, list) {
 		if (os_memcmp(bss->bssid, bssid, ETH_ALEN) == 0)
 			return bss;
 	}
@@ -117,15 +117,15 @@ static int in_array(int *array, int val)
 }
 
 
-static int * bgscan_learn_get_freqs(struct bgscan_learn_data *data,
+static int * bgscan_learn_11k_get_freqs(struct bgscan_learn_11k_data *data,
 				    size_t *count)
 {
-	struct bgscan_learn_bss *bss;
+	struct bgscan_learn_11k_bss *bss;
 	int *freqs = NULL, *n;
 
 	*count = 0;
 
-	dl_list_for_each(bss, &data->bss, struct bgscan_learn_bss, list) {
+	dl_list_for_each(bss, &data->bss, struct bgscan_learn_11k_bss, list) {
 		if (in_array(freqs, bss->freq))
 			continue;
 		n = os_realloc_array(freqs, *count + 2, sizeof(int));
@@ -141,7 +141,7 @@ static int * bgscan_learn_get_freqs(struct bgscan_learn_data *data,
 }
 
 
-static int * bgscan_learn_get_probe_freq(struct bgscan_learn_data *data,
+static int * bgscan_learn_11k_get_probe_freq(struct bgscan_learn_11k_data *data,
 					 int *freqs, size_t count)
 {
 	int idx, *n;
@@ -176,9 +176,9 @@ static int * bgscan_learn_get_probe_freq(struct bgscan_learn_data *data,
 }
 
 
-static void bgscan_learn_scan_timeout(void *eloop_ctx, void *timeout_ctx)
+static void bgscan_learn_11k_scan_timeout(void *eloop_ctx, void *timeout_ctx)
 {
-	struct bgscan_learn_data *data = eloop_ctx;
+	struct bgscan_learn_11k_data *data = eloop_ctx;
 	struct wpa_supplicant *wpa_s = data->wpa_s;
 	struct wpa_driver_scan_params params;
 	int *freqs = NULL;
@@ -192,10 +192,10 @@ static void bgscan_learn_scan_timeout(void *eloop_ctx, void *timeout_ctx)
 	if (data->ssid->scan_freq)
 		params.freqs = data->ssid->scan_freq;
 	else {
-		freqs = bgscan_learn_get_freqs(data, &count);
+		freqs = bgscan_learn_11k_get_freqs(data, &count);
 		wpa_printf(MSG_DEBUG, "bgscan learn 11k: BSSes in this ESS have "
 			   "been seen on %u channels", (unsigned int) count);
-		freqs = bgscan_learn_get_probe_freq(data, freqs, count);
+		freqs = bgscan_learn_11k_get_probe_freq(data, freqs, count);
 
 		msg[0] = '\0';
 		pos = msg;
@@ -217,17 +217,17 @@ static void bgscan_learn_scan_timeout(void *eloop_ctx, void *timeout_ctx)
 	if (wpa_supplicant_trigger_scan(wpa_s, &params)) {
 		wpa_printf(MSG_DEBUG, "bgscan learn 11k: Failed to trigger scan");
 		eloop_register_timeout(data->scan_interval, 0,
-				       bgscan_learn_scan_timeout, data, NULL);
+				       bgscan_learn_11k_scan_timeout, data, NULL);
 	} else
 		os_get_reltime(&data->last_bgscan);
 	os_free(freqs);
 }
 
-static void bgscan_learn_neighbor_cb(void *ctx, struct wpabuf *neighbor_rep)
+static void bgscan_learn_11k_neighbor_cb(void *ctx, struct wpabuf *neighbor_rep)
 {
-	struct bgscan_learn_data *bgscan_data = ctx;
+	struct bgscan_learn_11k_data *bgscan_data = ctx;
 	struct wpa_supplicant *wpa_s = bgscan_data->wpa_s;
-	struct bgscan_learn_bss *bss;
+	struct bgscan_learn_11k_bss *bss;
 	int operclass;
 	int chan;
 	int freq;
@@ -335,7 +335,7 @@ static void bgscan_learn_neighbor_cb(void *ctx, struct wpabuf *neighbor_rep)
 			wpa_printf(MSG_DEBUG, "bgscan learn 11k: learnt chan %i with freq %i", chan, freq);
 		}
 
-		bss = bgscan_learn_get_bss(bgscan_data, nr);
+		bss = bgscan_learn_11k_get_bss(bgscan_data, nr);
 		if (bss && bss->freq != freq) {
 			wpa_printf(MSG_DEBUG, "bgscan learn 11k: Update BSS "
 			   MACSTR " freq %d -> %d",
@@ -352,7 +352,7 @@ static void bgscan_learn_neighbor_cb(void *ctx, struct wpabuf *neighbor_rep)
 			dl_list_add(&bgscan_data->bss, &bss->list);
 		}
 
-		bgscan_learn_add_neighbor(bss, nr);
+		bgscan_learn_11k_add_neighbor(bss, nr);
 
 		wpa_msg(wpa_s, MSG_INFO, RRM_EVENT_NEIGHBOR_REP_RXED
 			"bssid=" MACSTR
@@ -371,17 +371,17 @@ out:
 	wpabuf_free(neighbor_rep);
 }
 
-static void bgscan_learn_neighbor_timeout(void *eloop_ctx, void *timeout_ctx)
+static void bgscan_learn_11k_neighbor_timeout(void *eloop_ctx, void *timeout_ctx)
 {
-	struct bgscan_learn_data *data = eloop_ctx;
+	struct bgscan_learn_11k_data *data = eloop_ctx;
 
 	if(data->use_11k) {
-		eloop_register_timeout(data->neighbor_rep_interval, 0, bgscan_learn_neighbor_timeout, data, NULL);
-		wpas_rrm_send_neighbor_rep_request(data->wpa_s, NULL, 0, 0, bgscan_learn_neighbor_cb, data);
+		eloop_register_timeout(data->neighbor_rep_interval, 0, bgscan_learn_11k_neighbor_timeout, data, NULL);
+		wpas_rrm_send_neighbor_rep_request(data->wpa_s, NULL, 0, 0, bgscan_learn_11k_neighbor_cb, data);
 	}
 }
 
-static int * bgscan_learn_get_supp_freqs(struct wpa_supplicant *wpa_s)
+static int * bgscan_learn_11k_get_supp_freqs(struct wpa_supplicant *wpa_s)
 {
 	struct hostapd_hw_modes *modes;
 	int i, j, *freqs = NULL, *n;
@@ -412,11 +412,11 @@ static int * bgscan_learn_get_supp_freqs(struct wpa_supplicant *wpa_s)
 	return freqs;
 }
 
-static void * bgscan_learn_init(struct wpa_supplicant *wpa_s,
+static void * bgscan_learn_11k_init(struct wpa_supplicant *wpa_s,
 				const char *params,
 				const struct wpa_ssid *ssid)
 {
-	struct bgscan_learn_data *data;
+	struct bgscan_learn_11k_data *data;
 
 	data = os_zalloc(sizeof(*data));
 	if (data == NULL)
@@ -427,7 +427,7 @@ static void * bgscan_learn_init(struct wpa_supplicant *wpa_s,
 	data->short_interval = 30;
 	data->signal_threshold = -60;
 	data->long_interval = 30; //300;
-	data->use_11k = wpas_rrm_send_neighbor_rep_request(wpa_s, NULL, 0, 0, bgscan_learn_neighbor_cb, data) == 0;
+	data->use_11k = wpas_rrm_send_neighbor_rep_request(wpa_s, NULL, 0, 0, bgscan_learn_11k_neighbor_cb, data) == 0;
 
 	wpa_printf(MSG_DEBUG, "bgscan learn 11k: Signal strength threshold %d  "
 		   "Short bgscan interval %d  Long bgscan interval %d use 11k %d",
@@ -440,7 +440,7 @@ static void * bgscan_learn_init(struct wpa_supplicant *wpa_s,
 			   "signal strength monitoring");
 	}
 
-	data->supp_freqs = bgscan_learn_get_supp_freqs(wpa_s);
+	data->supp_freqs = bgscan_learn_11k_get_supp_freqs(wpa_s);
 	data->scan_interval = data->short_interval;
 	data->neighbor_rep_interval = data->short_interval;
 	if (data->signal_threshold) {
@@ -451,11 +451,11 @@ static void * bgscan_learn_init(struct wpa_supplicant *wpa_s,
 			data->scan_interval = data->long_interval;
 	}
 
-	eloop_register_timeout(data->scan_interval, 0, bgscan_learn_scan_timeout,
+	eloop_register_timeout(data->scan_interval, 0, bgscan_learn_11k_scan_timeout,
 			       data, NULL);
 
 	if(data->use_11k)
-		eloop_register_timeout(data->neighbor_rep_interval, 0, bgscan_learn_neighbor_timeout,
+		eloop_register_timeout(data->neighbor_rep_interval, 0, bgscan_learn_11k_neighbor_timeout,
 						       data, NULL);
 
 	/*
@@ -470,16 +470,16 @@ static void * bgscan_learn_init(struct wpa_supplicant *wpa_s,
 }
 
 
-static void bgscan_learn_deinit(void *priv)
+static void bgscan_learn_11k_deinit(void *priv)
 {
-	struct bgscan_learn_data *data = priv;
-	struct bgscan_learn_bss *bss, *n;
+	struct bgscan_learn_11k_data *data = priv;
+	struct bgscan_learn_11k_bss *bss, *n;
 
-	eloop_cancel_timeout(bgscan_learn_scan_timeout, data, NULL);
-	eloop_cancel_timeout(bgscan_learn_neighbor_timeout, data, NULL);
+	eloop_cancel_timeout(bgscan_learn_11k_scan_timeout, data, NULL);
+	eloop_cancel_timeout(bgscan_learn_11k_neighbor_timeout, data, NULL);
 	if (data->signal_threshold)
 		wpa_drv_signals_monitor(data->wpa_s, NULL, 0, 0);
-	dl_list_for_each_safe(bss, n, &data->bss, struct bgscan_learn_bss,
+	dl_list_for_each_safe(bss, n, &data->bss, struct bgscan_learn_11k_bss,
 			      list) {
 		dl_list_del(&bss->list);
 		bss_free(bss);
@@ -489,7 +489,7 @@ static void bgscan_learn_deinit(void *priv)
 }
 
 
-static int bgscan_learn_bss_match(struct bgscan_learn_data *data,
+static int bgscan_learn_11k_bss_match(struct bgscan_learn_11k_data *data,
 				  struct wpa_scan_res *bss)
 {
 	const u8 *ie;
@@ -506,10 +506,10 @@ static int bgscan_learn_bss_match(struct bgscan_learn_data *data,
 }
 
 
-static int bgscan_learn_notify_scan(void *priv,
+static int bgscan_learn_11k_notify_scan(void *priv,
 				    struct wpa_scan_results *scan_res)
 {
-	struct bgscan_learn_data *data = priv;
+	struct bgscan_learn_11k_data *data = priv;
 	size_t i, j;
 #define MAX_BSS 50
 	u8 bssid[MAX_BSS * ETH_ALEN];
@@ -524,13 +524,13 @@ static int bgscan_learn_notify_scan(void *priv,
 		data->last_signal = siginfo.current_signal;
 	}
 
-	eloop_cancel_timeout(bgscan_learn_scan_timeout, data, NULL);
-	eloop_register_timeout(data->scan_interval, 0, bgscan_learn_scan_timeout,
+	eloop_cancel_timeout(bgscan_learn_11k_scan_timeout, data, NULL);
+	eloop_register_timeout(data->scan_interval, 0, bgscan_learn_11k_scan_timeout,
 			       data, NULL);
 
 	for (i = 0; i < scan_res->num; i++) {
 		struct wpa_scan_res *res = scan_res->res[i];
-		if (!bgscan_learn_bss_match(data, res))
+		if (!bgscan_learn_11k_bss_match(data, res))
 			continue;
 
 		if (num_bssid < MAX_BSS) {
@@ -544,12 +544,12 @@ static int bgscan_learn_notify_scan(void *priv,
 
 	for (i = 0; i < scan_res->num; i++) {
 		struct wpa_scan_res *res = scan_res->res[i];
-		struct bgscan_learn_bss *bss;
+		struct bgscan_learn_11k_bss *bss;
 
-		if (!bgscan_learn_bss_match(data, res))
+		if (!bgscan_learn_11k_bss_match(data, res))
 			continue;
 
-		bss = bgscan_learn_get_bss(data, res->bssid);
+		bss = bgscan_learn_11k_get_bss(data, res->bssid);
 		if (bss && bss->freq != res->freq) {
 			wpa_printf(MSG_DEBUG, "bgscan learn 11k: Update BSS "
 			   MACSTR " freq %d -> %d",
@@ -568,7 +568,7 @@ static int bgscan_learn_notify_scan(void *priv,
 
 		for (j = 0; j < num_bssid; j++) {
 			u8 *addr = bssid + j * ETH_ALEN;
-			bgscan_learn_add_neighbor(bss, addr);
+			bgscan_learn_11k_add_neighbor(bss, addr);
 		}
 
 		if(data->last_signal <= data->signal_threshold && res->level > data->signal_threshold) {
@@ -585,30 +585,30 @@ static int bgscan_learn_notify_scan(void *priv,
 }
 
 
-static void bgscan_learn_notify_beacon_loss(void *priv)
+static void bgscan_learn_11k_notify_beacon_loss(void *priv)
 {
-	struct bgscan_learn_data *data = priv;
+	struct bgscan_learn_11k_data *data = priv;
 
 	wpa_printf(MSG_DEBUG, "bgscan learn 11k: beacon loss");
 
 	if(data->use_11k) {
 		wpa_printf(MSG_DEBUG, "bgscan learn 11k: Trigger immediate neighbor report");
-		eloop_cancel_timeout(bgscan_learn_neighbor_timeout, data, NULL);
-		eloop_register_timeout(0, 0, bgscan_learn_neighbor_timeout, data, NULL);
+		eloop_cancel_timeout(bgscan_learn_11k_neighbor_timeout, data, NULL);
+		eloop_register_timeout(0, 0, bgscan_learn_11k_neighbor_timeout, data, NULL);
 	}
 
 	wpa_printf(MSG_DEBUG, "bgscan learn 11k: Trigger immediate scan");
-	eloop_cancel_timeout(bgscan_learn_scan_timeout, data, NULL);
-	eloop_register_timeout(0, 0, bgscan_learn_scan_timeout, data, NULL);
+	eloop_cancel_timeout(bgscan_learn_11k_scan_timeout, data, NULL);
+	eloop_register_timeout(0, 0, bgscan_learn_11k_scan_timeout, data, NULL);
 }
 
 
-static void bgscan_learn_notify_signal_change(void *priv, int above,
+static void bgscan_learn_11k_notify_signal_change(void *priv, int above,
 					      int current_signal,
 					      int current_noise,
 					      int current_txrate)
 {
-	struct bgscan_learn_data *data = priv;
+	struct bgscan_learn_11k_data *data = priv;
 	int scan = 0;
 	struct os_reltime now;
 
@@ -631,9 +631,9 @@ static void bgscan_learn_notify_signal_change(void *priv, int above,
 		wpa_printf(MSG_DEBUG, "bgscan learn 11k: Start using long bgscan "
 			   "interval");
 		data->scan_interval = data->long_interval;
-		eloop_cancel_timeout(bgscan_learn_scan_timeout, data, NULL);
+		eloop_cancel_timeout(bgscan_learn_11k_scan_timeout, data, NULL);
 		eloop_register_timeout(data->scan_interval, 0,
-				       bgscan_learn_scan_timeout, data, NULL);
+				       bgscan_learn_11k_scan_timeout, data, NULL);
 	} else if (!above) {
 		/*
 		 * Signal dropped further 4 dB. Request a new scan if we have
@@ -646,21 +646,21 @@ static void bgscan_learn_notify_signal_change(void *priv, int above,
 
 	if (scan) {
 		wpa_printf(MSG_DEBUG, "bgscan learn 11k: Trigger immediate scan");
-		eloop_cancel_timeout(bgscan_learn_scan_timeout, data, NULL);
-		eloop_register_timeout(0, 0, bgscan_learn_scan_timeout, data, NULL);
+		eloop_cancel_timeout(bgscan_learn_11k_scan_timeout, data, NULL);
+		eloop_register_timeout(0, 0, bgscan_learn_11k_scan_timeout, data, NULL);
 	} else if(data->use_11k) {
 		wpa_printf(MSG_DEBUG, "bgscan learn 11k: Trigger immediate neighbor report");
-		eloop_cancel_timeout(bgscan_learn_neighbor_timeout, data, NULL);
-		eloop_register_timeout(0, 0, bgscan_learn_neighbor_timeout, data, NULL);
+		eloop_cancel_timeout(bgscan_learn_11k_neighbor_timeout, data, NULL);
+		eloop_register_timeout(0, 0, bgscan_learn_11k_neighbor_timeout, data, NULL);
 	}
 }
 
 
 const struct bgscan_ops bgscan_learn_11k_ops = {
 	.name = "learn_11k",
-	.init = bgscan_learn_init,
-	.deinit = bgscan_learn_deinit,
-	.notify_scan = bgscan_learn_notify_scan,
-	.notify_beacon_loss = bgscan_learn_notify_beacon_loss,
-	.notify_signal_change = bgscan_learn_notify_signal_change,
+	.init = bgscan_learn_11k_init,
+	.deinit = bgscan_learn_11k_deinit,
+	.notify_scan = bgscan_learn_11k_notify_scan,
+	.notify_beacon_loss = bgscan_learn_11k_notify_beacon_loss,
+	.notify_signal_change = bgscan_learn_11k_notify_signal_change,
 };

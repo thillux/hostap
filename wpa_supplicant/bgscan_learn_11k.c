@@ -496,9 +496,9 @@ static void * bgscan_learn_11k_init(struct wpa_supplicant *wpa_s,
 	dl_list_init(&data->bss);
 	data->wpa_s = wpa_s;
 	data->ssid = ssid;
-	data->short_interval = 5;
+	data->short_interval = 30;
 	data->signal_threshold = -60;
-	data->long_interval = 30; //300;
+	data->long_interval = 300;
 	data->signal_hysteresis = 4;
 	data->roam_threshold_rssi = 10;
 	data->roam_threshold_time_ms = 500;
@@ -601,19 +601,19 @@ static int bgscan_learn_11k_roam_score(struct bgscan_learn_11k_data *data, struc
 	int roam_score = -1;
 
 	if (data->last_snr >= 25) {
-		wpa_printf(MSG_DEBUG, "bgscan learn 11k: don't roam, snr too good %d > 25", data->last_snr);
+		wpa_printf(MSG_DEBUG, "bgscan learn 11k: skip roaming candidate, current snr too good %d > 25", data->last_snr);
 		goto out;
 	}
 
 	os_get_reltime(&now);
 	long int roam_time_delta_ms = now.sec * 1000 + now.usec / 1000 - data->last_roam.sec * 1000 - data->last_roam.usec / 1000;
 	if (roam_time_delta_ms <= data->roam_threshold_time_ms) {
-		wpa_printf(MSG_DEBUG, "bgscan learn 11k: don't roam, last roam was %li ms ago", roam_time_delta_ms);
+		wpa_printf(MSG_DEBUG, "bgscan learn 11k: skip roaming candidate, last roam was %li ms ago", roam_time_delta_ms);
 		goto out;
 	}
 
 	if (memcmp(data->wpa_s->bssid, res->bssid, ETH_ALEN) == 0) {
-		wpa_printf(MSG_DEBUG, "bgscan learn 11k: don't roam, target is current bssid");
+		wpa_printf(MSG_DEBUG, "bgscan learn 11k: skip roaming candidate, target is currently associated");
 		goto out;
 	}
 

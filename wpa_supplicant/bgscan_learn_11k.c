@@ -1,6 +1,7 @@
 /*
  * WPA Supplicant - background scan and roaming module: learn_11k
  * Copyright (c) 2009-2010, Jouni Malinen <j@w1.fi>
+ * Copyright (c) 2020, Markus Theil <theil.markus@gmail.com>
  *
  * This software may be distributed under the terms of the BSD license.
  * See README for more details.
@@ -42,13 +43,19 @@ struct bgscan_learn_11k_data {
 	int long_interval; /* use if signal > threshold */
 	
 	int *supp_freqs;
+
+	int probe_idx;
+
 	int *scan_freqs;
-	int current_scan_freq[2];
+
+	int scan_freq[2];
 	int current_scan_idx;
 	int current_num_scan_freqs;
-	int probe_idx;
 	struct wpa_driver_scan_params params;
 	
+	int best_roam_score;
+	u8 bssid[ETH_ALEN];
+
 	int last_signal;
 	int last_snr;
 	
@@ -56,13 +63,11 @@ struct bgscan_learn_11k_data {
 	int signal_threshold;
 	
 	int roam_threshold_rssi;
-	int roam_threshold_time;
+	int roam_threshold_time_ms;
 
 	int num_fast_scans;
-	
-	struct os_reltime last_bgscan_start;
-	struct os_reltime last_bgscan_finish;
 
+	struct os_reltime last_bgscan;
 	struct os_reltime last_roam;
 
 	int use_11k;
@@ -482,7 +487,7 @@ static void * bgscan_learn_11k_init(struct wpa_supplicant *wpa_s,
 	data->long_interval = 30; //300;
 	data->signal_hysteresis = 4;
 	data->roam_threshold_rssi = 10;
-	data->roam_threshold_time = 5;
+	data->roam_threshold_time_ms = 500;
 	data->use_11k = wpa_s->rrm.rrm_used;
 
 	wpa_printf(MSG_DEBUG, "bgscan learn 11k: Signal strength threshold %d  "
@@ -541,6 +546,7 @@ static void bgscan_learn_11k_deinit(void *priv)
 
 	eloop_cancel_timeout(bgscan_learn_11k_scan_timeout, data, NULL);
 	eloop_cancel_timeout(bgscan_learn_11k_neighbor_timeout, data, NULL);
+	eloop_cancel_timeout(bgscan_learn_11k_perform_incremental_scan_timeout, data, NULL);
 	wpas_rrm_reset(data->wpa_s);
 	if (data->signal_threshold)
 		wpa_drv_signals_monitor(data->wpa_s, NULL, 0, 0);
@@ -582,8 +588,9 @@ static struct wpa_scan_res * bgscan_learn_11k_should_roam(struct bgscan_learn_11
 	}
 
 	os_get_reltime(&now);
-	if (now.sec <= data->last_roam.sec + data->roam_threshold_time) {
-		wpa_printf(MSG_DEBUG, "bgscan learn 11k: don't roam, last roam was %li s ago", now.sec - data->last_roam.sec);
+	long int roam_time_delta_ms = now.sec * 1000 + now.usec / 1000 - data->last_roam.sec * 1000 - data->last_roam.usec / 1000;
+	if (roam_time_delta_ms <= data->roam_threshold_time_ms) {
+		wpa_printf(MSG_DEBUG, "bgscan learn 11k: don't roam, last roam was %li ms ago", roam_time_delta_ms);
 		goto out;
 	}
 

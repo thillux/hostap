@@ -404,6 +404,8 @@ static void bgscan_learn_11k_neighbor_cb(void *ctx, struct wpabuf *neighbor_rep)
 		chan = nr[ETH_ALEN + 5];
 		freq = ieee80211_chan_to_freq(NULL, operclass, chan);
 
+		wpa_printf(MSG_DEBUG, "bgscan learn 11k: Got neighbor report for " MACSTR " freq=%d", MAC2STR(nr), freq);
+
 		if(freq < 0) {
 			wpa_printf(MSG_DEBUG, "bgscan learn 11k: unknown operclass %i chan %i", operclass, chan);
 		} else {
@@ -501,6 +503,9 @@ static void * bgscan_learn_11k_init(struct wpa_supplicant *wpa_s,
 	data->roam_threshold_rssi = 10;
 	data->roam_threshold_time_ms = 500;
 	data->use_11k = wpa_s->rrm.rrm_used;
+	data->has_roaming_candidate = 0;
+	data->best_roam_score = -1;
+	data->current_scan_idx = 0;
 
 	wpa_printf(MSG_DEBUG, "bgscan learn 11k: Signal strength threshold %d  "
 		   "Short bgscan interval %d  Long bgscan interval %d use 11k %d",
@@ -613,10 +618,12 @@ static int bgscan_learn_11k_roam_score(struct bgscan_learn_11k_data *data, struc
 	}
 
 	if (data->last_signal <= data->signal_threshold &&
-	    res->level > data->last_signal + data->roam_threshold_rssi)
+	    res->level > data->last_signal + data->roam_threshold_rssi) {
 		roam_score = res->level - (data->last_signal + data->roam_threshold_rssi);
+	}
 
 out:
+	wpa_printf(MSG_DEBUG, "bgscan learn 11k: roam score for "MACSTR": %i", MAC2STR(res->bssid), roam_score);
 	return roam_score;
 }
 

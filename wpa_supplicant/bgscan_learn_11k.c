@@ -48,7 +48,7 @@ struct bgscan_learn_11k_data {
 
 	int *scan_freqs;
 
-	int scan_freq[2];
+	int current_scan_freq[2];
 	int current_scan_idx;
 	int current_num_scan_freqs;
 	struct wpa_driver_scan_params params;
@@ -283,7 +283,7 @@ static void bgscan_learn_11k_scan_timeout(void *eloop_ctx, void *timeout_ctx)
 		eloop_register_timeout(data->scan_interval, 0,
 				       bgscan_learn_11k_scan_timeout, data, NULL);
 	} else
-		os_get_reltime(&data->last_bgscan_start);
+		os_get_reltime(&data->last_bgscan);
 	
 }
 
@@ -531,7 +531,7 @@ static void * bgscan_learn_11k_init(struct wpa_supplicant *wpa_s,
 	 * us skip an immediate new scan in cases where the current signal
 	 * level is below the bgscan threshold.
 	 */
-	os_get_reltime(&data->last_bgscan_start);
+	os_get_reltime(&data->last_bgscan);
 
 	os_get_reltime(&data->last_roam);
 
@@ -737,7 +737,7 @@ static void bgscan_learn_11k_notify_signal_change(void *priv, int above,
 		data->scan_interval = data->short_interval;
 		data->num_fast_scans = 0;
 		os_get_reltime(&now);
-		if (now.sec > data->last_bgscan_start.sec + 1)
+		if (now.sec > data->last_bgscan.sec + 1)
 			scan = 1;
 	} else if (data->scan_interval == data->short_interval && above) {
 		wpa_printf(MSG_DEBUG, "bgscan learn 11k: Start using long bgscan "
@@ -755,7 +755,7 @@ static void bgscan_learn_11k_notify_signal_change(void *priv, int above,
 		 * not yet scanned in a while.
 		 */
 		os_get_reltime(&now);
-		if (now.sec > data->last_bgscan_start.sec + wait_threshold) {
+		if (now.sec > data->last_bgscan.sec + wait_threshold) {
 			data->num_fast_scans++;
 			scan = 1;
 		}

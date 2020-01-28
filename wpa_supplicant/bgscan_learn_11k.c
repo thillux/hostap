@@ -564,7 +564,7 @@ static void bgscan_learn_11k_deinit(void *priv)
 	eloop_cancel_timeout(bgscan_learn_11k_scan_timeout, data, NULL);
 	eloop_cancel_timeout(bgscan_learn_11k_neighbor_timeout, data, NULL);
 	eloop_cancel_timeout(bgscan_learn_11k_perform_incremental_scan_timeout, data, NULL);
-	wpas_rrm_reset(data->wpa_s);
+	wpas_rrm_cancel_neighbor_timeout(data->wpa_s);
 	if (data->signal_threshold)
 		wpa_drv_signals_monitor(data->wpa_s, NULL, 0, 0);
 	dl_list_for_each_safe(bss, n, &data->bss, struct bgscan_learn_11k_bss,
@@ -763,7 +763,7 @@ static void bgscan_learn_11k_notify_signal_change(void *priv, int above,
 		eloop_register_timeout(data->scan_interval, 0,
 				       bgscan_learn_11k_scan_timeout, data, NULL);
 	} else if (!above) {
-		const int wait_threshold = data->num_fast_scans > 3 ? 10 : 2;
+		const int wait_threshold = data->num_fast_scans > 2 ? 10 : 2;
 
 		/*
 		 * Signal dropped further 4 dB. Request a new scan if we have

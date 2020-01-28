@@ -36,6 +36,15 @@ static void wpas_rrm_neighbor_rep_timeout_handler(void *data, void *user_ctx)
 }
 
 
+void wpas_rrm_cancel_neighbor_timeout(struct wpa_supplicant *wpa_s)
+{
+	eloop_cancel_timeout(wpas_rrm_neighbor_rep_timeout_handler, &wpa_s->rrm,
+			     NULL);
+	if (wpa_s->rrm.notify_neighbor_rep)
+		wpas_rrm_neighbor_rep_timeout_handler(&wpa_s->rrm, NULL);
+}
+
+
 /*
  * wpas_rrm_reset - Clear and reset all RRM data in wpa_supplicant
  * @wpa_s: Pointer to wpa_supplicant
@@ -44,10 +53,7 @@ void wpas_rrm_reset(struct wpa_supplicant *wpa_s)
 {
 	wpa_s->rrm.rrm_used = 0;
 
-	eloop_cancel_timeout(wpas_rrm_neighbor_rep_timeout_handler, &wpa_s->rrm,
-			     NULL);
-	if (wpa_s->rrm.notify_neighbor_rep)
-		wpas_rrm_neighbor_rep_timeout_handler(&wpa_s->rrm, NULL);
+	wpas_rrm_cancel_neighbor_timeout(wpa_s);
 	wpa_s->rrm.next_neighbor_rep_token = 1;
 	wpas_clear_beacon_rep_data(wpa_s);
 }

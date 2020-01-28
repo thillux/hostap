@@ -1393,6 +1393,7 @@ int wpas_update_random_addr(struct wpa_supplicant *wpa_s, int style);
 int wpas_update_random_addr_disassoc(struct wpa_supplicant *wpa_s);
 void add_freq(int *freqs, int *num_freqs, int freq);
 
+void wpas_rrm_cancel_neighbor_timeout(struct wpa_supplicant *wpa_s);
 void wpas_rrm_reset(struct wpa_supplicant *wpa_s);
 void wpas_rrm_process_neighbor_rep(struct wpa_supplicant *wpa_s,
 				   const u8 *report, size_t report_len);

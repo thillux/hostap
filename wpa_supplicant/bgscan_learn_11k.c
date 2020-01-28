@@ -52,9 +52,10 @@ struct bgscan_learn_11k_data {
 	int current_scan_idx;
 	int current_num_scan_freqs;
 	struct wpa_driver_scan_params params;
-	
+
+	int has_roaming_candidate;
 	int best_roam_score;
-	u8 bssid[ETH_ALEN];
+	u8 roam_bssid[ETH_ALEN];
 
 	int last_signal;
 	int last_snr;
@@ -218,19 +219,24 @@ static int * bgscan_learn_11k_get_probe_freq(struct bgscan_learn_11k_data *data,
 
 static int bgscan_learn_11k_perform_incremental_scan(struct bgscan_learn_11k_data *data)
 {
-	if (data->scan_freqs[data->current_scan_idx] != 0) {
+	if (data->scan_freqs[data->current_scan_idx] != 0 && data->current_scan_idx < data->current_num_scan_freqs) {
 		data->current_scan_freq[0] = data->scan_freqs[data->current_scan_idx];
 		wpa_printf(MSG_DEBUG, "bgscan learn 11k: Incremental scan for %d", data->current_scan_freq[0]);
 		data->current_scan_idx++;
 	} else {
+		eloop_cancel_timeout(bgscan_learn_11k_scan_timeout, data, NULL);
 		eloop_register_timeout(data->scan_interval, 0,
 		       bgscan_learn_11k_scan_timeout, data, NULL);
 		return 0;
 	}
 
-	if (wpa_supplicant_trigger_scan(data->wpa_s, &data->params))
+	if (wpa_supplicant_trigger_scan(data->wpa_s, &data->params)) {
+		wpa_printf(MSG_DEBUG, "bgscan learn 11k: Failed to trigger scan");
+		eloop_cancel_timeout(bgscan_learn_11k_scan_timeout, data, NULL);
+		eloop_register_timeout(data->scan_interval, 0,
+				       bgscan_learn_11k_scan_timeout, data, NULL);
 		return -1;
-	else {
+	} else {
 		return 0;
 	}
 
@@ -240,6 +246,7 @@ static int bgscan_learn_11k_perform_incremental_scan(struct bgscan_learn_11k_dat
 static void bgscan_learn_11k_scan_timeout(void *eloop_ctx, void *timeout_ctx)
 {
 	struct bgscan_learn_11k_data *data = eloop_ctx;
+	struct wpa_signal_info siginfo;
 
 	size_t count, i;
 	char msg[100], *pos;
@@ -256,8 +263,7 @@ static void bgscan_learn_11k_scan_timeout(void *eloop_ctx, void *timeout_ctx)
 		data->scan_freqs = bgscan_learn_11k_get_freqs(data, &count);
 		wpa_printf(MSG_DEBUG, "bgscan learn 11k: BSSes in this ESS have "
 			   "been seen on %u channels", (unsigned int) count);
-		if(data->num_11k_neighbors < 2)
-			data->scan_freqs = bgscan_learn_11k_get_probe_freq(data, data->scan_freqs, count);
+		data->scan_freqs = bgscan_learn_11k_get_probe_freq(data, data->scan_freqs, count);
 		msg[0] = '\0';
 		pos = msg;
 		for (i = 0; data->scan_freqs && data->scan_freqs[i]; i++) {
@@ -276,13 +282,19 @@ static void bgscan_learn_11k_scan_timeout(void *eloop_ctx, void *timeout_ctx)
 		data->params.freqs = data->current_scan_freq;
 	}
 
+	if (wpa_drv_signal_poll(data->wpa_s, &siginfo) == 0) {
+		data->last_signal = siginfo.current_signal;
+		if (siginfo.current_noise != WPA_INVALID_NOISE)
+			data->last_snr = siginfo.current_signal - siginfo.current_noise;
+		else
+			data->last_snr = -1;
+	}
+
+	data->has_roaming_candidate = 0;
+	data->best_roam_score = -1;
 	data->current_scan_idx = 0;
 	wpa_printf(MSG_DEBUG, "bgscan learn 11k: Request a background scan");
-	if (bgscan_learn_11k_perform_incremental_scan(data)) {
-		wpa_printf(MSG_DEBUG, "bgscan learn 11k: Failed to trigger scan");
-		eloop_register_timeout(data->scan_interval, 0,
-				       bgscan_learn_11k_scan_timeout, data, NULL);
-	} else
+	if (bgscan_learn_11k_perform_incremental_scan(data) == 0)
 		os_get_reltime(&data->last_bgscan);
 	
 }
@@ -578,9 +590,10 @@ static int bgscan_learn_11k_bss_match(struct bgscan_learn_11k_data *data,
 }
 
 
-static struct wpa_scan_res * bgscan_learn_11k_should_roam(struct bgscan_learn_11k_data *data, struct wpa_scan_res *res, struct wpa_scan_res *roam_res)
+static int bgscan_learn_11k_roam_score(struct bgscan_learn_11k_data *data, struct wpa_scan_res *res)
 {
 	struct os_reltime now;
+	int roam_score = -1;
 
 	if (data->last_snr >= 25) {
 		wpa_printf(MSG_DEBUG, "bgscan learn 11k: don't roam, snr too good %d > 25", data->last_snr);
@@ -601,10 +614,10 @@ static struct wpa_scan_res * bgscan_learn_11k_should_roam(struct bgscan_learn_11
 
 	if (data->last_signal <= data->signal_threshold &&
 	    res->level > data->last_signal + data->roam_threshold_rssi)
-		roam_res = res;
+		roam_score = res->level - (data->last_signal + data->roam_threshold_rssi);
 
 out:
-	return roam_res;
+	return roam_score;
 }
 
 
@@ -616,20 +629,10 @@ static int bgscan_learn_11k_notify_scan(void *priv,
 #define MAX_BSS 50
 	u8 bssid[MAX_BSS * ETH_ALEN];
 	size_t num_bssid = 0;
-	struct wpa_scan_res *roam_res = NULL;
 	struct wpa_ssid *ssid = data->wpa_s->current_ssid;
-	struct wpa_signal_info siginfo;	
 
 	wpa_printf(MSG_DEBUG, "bgscan learn 11k: scan result notification");
 
-	if (wpa_drv_signal_poll(data->wpa_s, &siginfo) == 0) {
-		data->last_signal = siginfo.current_signal;
-		if (siginfo.current_noise != WPA_INVALID_NOISE)
-			data->last_snr = siginfo.current_signal - siginfo.current_noise;
-		else
-			data->last_snr = -1;
-	}
-	
 	for (i = 0; i < scan_res->num; i++) {
 		struct wpa_scan_res *res = scan_res->res[i];
 		if (!bgscan_learn_11k_bss_match(data, res))
@@ -647,6 +650,7 @@ static int bgscan_learn_11k_notify_scan(void *priv,
 	for (i = 0; i < scan_res->num; i++) {
 		struct wpa_scan_res *res = scan_res->res[i];
 		struct bgscan_learn_11k_bss *bss;
+		int roam_score;
 
 		if (!bgscan_learn_11k_bss_match(data, res))
 			continue;
@@ -673,7 +677,12 @@ static int bgscan_learn_11k_notify_scan(void *priv,
 			bgscan_learn_11k_add_neighbor(bss, addr);
 		}
 
-		roam_res = bgscan_learn_11k_should_roam(data, res, roam_res);
+		roam_score = bgscan_learn_11k_roam_score(data, res);
+		if (roam_score > data->best_roam_score) {
+			data->has_roaming_candidate = 1;
+			memcpy(data->roam_bssid, res->bssid, ETH_ALEN);
+			data->best_roam_score = roam_score;
+		}
 	}
 
 	if(data->current_scan_idx < data->current_num_scan_freqs) {
@@ -686,13 +695,12 @@ static int bgscan_learn_11k_notify_scan(void *priv,
 		eloop_register_timeout(data->scan_interval, 0, bgscan_learn_11k_scan_timeout,
 			       data, NULL);
 
-	}
-
-	if(roam_res) {
-		struct wpa_bss *roam_bss = wpa_bss_get(data->wpa_s, roam_res->bssid, ssid->ssid, ssid->ssid_len);
-		data->wpa_s->reassociate = 1;
-		os_get_reltime(&data->last_roam);
-		wpa_supplicant_connect(data->wpa_s, roam_bss, ssid);
+		if(data->best_roam_score > -1) {
+			struct wpa_bss *roam_bss = wpa_bss_get(data->wpa_s, data->roam_bssid, ssid->ssid, ssid->ssid_len);
+			data->wpa_s->reassociate = 1;
+			os_get_reltime(&data->last_roam);
+			wpa_supplicant_connect(data->wpa_s, roam_bss, ssid);
+		}
 	}
 
 	return 1;
